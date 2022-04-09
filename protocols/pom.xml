@@ -1,0 +1,36 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+  <modelVersion>4.0.0</modelVersion>
+  <packaging>jar</packaging>
+  <groupId>com.github.clojure-lsp</groupId>
+  <artifactId>lsp4clj-protocols</artifactId>
+  <version>0.0.1</version>
+  <name>lsp4clj-protocols</name>
+  <dependencies>
+    <dependency>
+      <groupId>org.clojure</groupId>
+      <artifactId>clojure</artifactId>
+      <version>1.11.1</version>
+    </dependency>
+  </dependencies>
+  <build>
+    <sourceDirectory>src</sourceDirectory>
+    <resources>
+      <resource>
+        <directory>resources</directory>
+      </resource>
+    </resources>
+  </build>
+  <repositories>
+    <repository>
+      <id>clojars</id>
+      <url>https://repo.clojars.org/</url>
+    </repository>
+  </repositories>
+  <scm>
+    <url>https://github.com/clojure-lsp/lsp4clj</url>
+    <connection>scm:git:git://github.com/clojure-lsp/lsp4clj.git</connection>
+    <developerConnection>scm:git:ssh://git@github.com/clojure-lsp/lsp4clj.git</developerConnection>
+    <tag>0.0.1</tag>
+  </scm>
+</project>

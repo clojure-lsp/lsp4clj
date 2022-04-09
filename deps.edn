@@ -1,0 +1,11 @@
+{:paths []
+ :aliases {:dev {:extra-paths ["protocols/src"
+                               "server/src"]
+                 :extra-deps {lsp4clj/server {:local/root "server"}
+                              lsp4clj/protocols {:local/root "protocols"}
+                              io.github.clojure/tools.build {:git/url "https://github.com/clojure/tools.build.git"
+                                                             :tag "v0.8.1"
+                                                             :sha "7d40500"}}}
+           :test {:extra-deps {lambdaisland/kaocha {:mvn/version "1.64.1010"}}
+                  :extra-paths ["server/test"]
+                  :main-opts ["-m" "kaocha.runner"]}}}
