@@ -1,4 +1,5 @@
-{:min-bb-version "0.4.0"
+{:paths ["scripts"]
+ :min-bb-version "0.4.0"
  :tasks {:requires ([babashka.fs :as fs])
          clean (do (fs/delete-tree "server/target")
                    (fs/delete-tree "server/lsp4clj-server.jar")
@@ -18,8 +19,7 @@
          lint-fix (do (shell "clojure-lsp format")
                       (shell "clojure-lsp clean-ns"))
 
-         release (do ;; TODO
-                   )
+         tag lsp4clj.ci/tag
 
          deploy-clojars-server (shell {:dir "server"} "clojure -T:build deploy-clojars")
          deploy-clojars-protocols (shell {:dir "protocols"} "clojure -T:build deploy-clojars")}}
