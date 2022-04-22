@@ -318,7 +318,7 @@
     (LSPWorkspaceService. feature-handler)))
 
 #_{:clj-kondo/ignore [:clojure-lsp/unused-public-var]}
-(defn tee-system-in [^java.io.InputStream system-in]
+(defn ^:deprecated tee-system-in [^java.io.InputStream system-in]
   (let [buffer-size 1024
         os (java.io.PipedOutputStream.)
         is (java.io.PipedInputStream. os)]
@@ -335,7 +335,7 @@
     is))
 
 #_{:clj-kondo/ignore [:clojure-lsp/unused-public-var]}
-(defn tee-system-out [^java.io.OutputStream system-out]
+(defn ^:deprecated tee-system-out [^java.io.OutputStream system-out]
   (let [buffer-size 1024
         is (java.io.PipedInputStream.)
         os (java.io.PipedOutputStream. is)]
