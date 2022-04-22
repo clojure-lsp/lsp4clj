@@ -28,6 +28,10 @@
      DocumentSymbol
      ExecuteCommandOptions
      FileChangeType
+     FileOperationFilter
+     FileOperationOptions
+     FileOperationPattern
+     FileOperationsServerCapabilities
      Hover
      InsertTextFormat
      Location
@@ -71,6 +75,7 @@
      WorkDoneProgressNotification
      WorkDoneProgressReport
      WorkDoneProgressEnd
+     WorkspaceServerCapabilities
      WorkspaceEdit)
    (org.eclipse.lsp4j.jsonrpc
      ResponseErrorException)
@@ -603,130 +608,190 @@
 #_{:clj-kondo/ignore [:clojure-lsp/unused-public-var]}
 (s/def ::bean (s/conformer clj->java))
 
-(s/def :capabilities/code-action ::legacy-debean)
-(s/def :capabilities/code-lens ::legacy-debean)
-(s/def :capabilities/color-provider ::legacy-debean)
-(s/def :capabilities/completion-item ::legacy-debean)
-(s/def :capabilities/definition ::legacy-debean)
-(s/def :capabilities/document-highlight ::legacy-debean)
-(s/def :capabilities/document-link ::legacy-debean)
-(s/def :capabilities/formatting ::legacy-debean)
-(s/def :capabilities/implementation ::legacy-debean)
-(s/def :capabilities/on-type-formatting ::legacy-debean)
-(s/def :capabilities/publish-diagnostics ::legacy-debean)
-(s/def :capabilities/range-formatting ::legacy-debean)
-(s/def :capabilities/references ::legacy-debean)
-(s/def :capabilities/rename ::legacy-debean)
-(s/def :capabilities/signature-information ::debean)
-(s/def :capabilities/synchronization ::legacy-debean)
-(s/def :capabilities/type-definition ::legacy-debean)
+(s/def :client-capabilities/code-action ::legacy-debean)
+(s/def :client-capabilities/code-lens ::legacy-debean)
+(s/def :client-capabilities/color-provider ::legacy-debean)
+(s/def :client-capabilities/completion-item ::legacy-debean)
+(s/def :client-capabilities/definition ::legacy-debean)
+(s/def :client-capabilities/document-highlight ::legacy-debean)
+(s/def :client-capabilities/document-link ::legacy-debean)
+(s/def :client-capabilities/formatting ::legacy-debean)
+(s/def :client-capabilities/implementation ::legacy-debean)
+(s/def :client-capabilities/on-type-formatting ::legacy-debean)
+(s/def :client-capabilities/publish-diagnostics ::legacy-debean)
+(s/def :client-capabilities/range-formatting ::legacy-debean)
+(s/def :client-capabilities/references ::legacy-debean)
+(s/def :client-capabilities/rename ::legacy-debean)
+(s/def :client-capabilities/signature-information ::debean)
+(s/def :client-capabilities/synchronization ::legacy-debean)
+(s/def :client-capabilities/type-definition ::legacy-debean)
 
-(s/def :capabilities/symbol-kind-value-set
+(s/def :client-capabilities/symbol-kind-value-set
   (s/conformer (fn [value-set]
                  (set (map (fn [^SymbolKind kind]
                              (.getValue kind)) value-set)))))
 
-(s/def :capabilities/symbol-kind (s/and ::legacy-debean
-                                        (s/keys :opt-un [:capabilities/symbol-kind-value-set])))
-(s/def :capabilities/document-symbol (s/and ::legacy-debean
-                                            (s/keys :opt-un [:capabilities/symbol-kind])))
-(s/def :capabilities/signature-help (s/and ::debean
-                                           (s/keys :opt-un [:capabilities/signature-information])))
+(s/def :client-capabilities/symbol-kind (s/and ::legacy-debean
+                                               (s/keys :opt-un [:client-capabilities/symbol-kind-value-set])))
+(s/def :client-capabilities/document-symbol (s/and ::legacy-debean
+                                                   (s/keys :opt-un [:client-capabilities/symbol-kind])))
+(s/def :client-capabilities/signature-help (s/and ::debean
+                                                  (s/keys :opt-un [:client-capabilities/signature-information])))
 
-(s/def :capabilities/completion-item-kind-value-set
+(s/def :client-capabilities/completion-item-kind-value-set
   (s/conformer (fn [value-set]
                  (set (map (fn [^CompletionItemKind kind]
                              (.getValue kind)) value-set)))))
 
-(s/def :capabilities/completion-item-kind (s/and ::legacy-debean
-                                                 (s/keys :opt-un [:capabilities/completion-item-kind-value-set])))
-(s/def :capabilities/completion (s/and ::legacy-debean
-                                       (s/keys :opt-un [:capabilities/completion-item
-                                                        :capabilities/completion-item-kind])))
-(s/def :capabilities/hover (s/and ::legacy-debean
-                                  (s/keys :opt-un [:capabilities/content-format])))
-(s/def :capabilities/text-document (s/and ::legacy-debean
-                                          (s/keys :opt-un [:capabilities/hover
-                                                           :capabilities/completion
-                                                           :capabilities/definition
-                                                           :capabilities/formatting
-                                                           :capabilities/publish-diagnostics
-                                                           :capabilities/code-action
-                                                           :capabilities/document-symbol
-                                                           :capabilities/code-lens
-                                                           :capabilities/document-highlight
-                                                           :capabilities/color-provider
-                                                           :capabilities/type-definition
-                                                           :capabilities/rename
-                                                           :capabilities/references
-                                                           :capabilities/document-link
-                                                           :capabilities/synchronization
-                                                           :capabilities/range-formatting
-                                                           :capabilities/on-type-formatting
-                                                           :capabilities/signature-help
-                                                           :capabilities/implementation])))
+(s/def :client-capabilities/completion-item-kind (s/and ::legacy-debean
+                                                        (s/keys :opt-un [:client-capabilities/completion-item-kind-value-set])))
+(s/def :client-capabilities/completion (s/and ::legacy-debean
+                                              (s/keys :opt-un [:client-capabilities/completion-item
+                                                               :client-capabilities/completion-item-kind])))
+(s/def :client-capabilities/hover (s/and ::legacy-debean
+                                         (s/keys :opt-un [:client-capabilities/content-format])))
+(s/def :client-capabilities/text-document (s/and ::legacy-debean
+                                                 (s/keys :opt-un [:client-capabilities/hover
+                                                                  :client-capabilities/completion
+                                                                  :client-capabilities/definition
+                                                                  :client-capabilities/formatting
+                                                                  :client-capabilities/publish-diagnostics
+                                                                  :client-capabilities/code-action
+                                                                  :client-capabilities/document-symbol
+                                                                  :client-capabilities/code-lens
+                                                                  :client-capabilities/document-highlight
+                                                                  :client-capabilities/color-provider
+                                                                  :client-capabilities/type-definition
+                                                                  :client-capabilities/rename
+                                                                  :client-capabilities/references
+                                                                  :client-capabilities/document-link
+                                                                  :client-capabilities/synchronization
+                                                                  :client-capabilities/range-formatting
+                                                                  :client-capabilities/on-type-formatting
+                                                                  :client-capabilities/signature-help
+                                                                  :client-capabilities/implementation])))
 
-(s/def :capabilities/workspace-edit ::legacy-debean)
-(s/def :capabilities/did-change-configuration ::legacy-debean)
-(s/def :capabilities/did-change-watched-files ::legacy-debean)
-(s/def :capabilities/execute-command ::legacy-debean)
-(s/def :capabilities/symbol (s/and ::legacy-debean
-                                   (s/keys :opt-un [:capabilities/symbol-kind])))
-(s/def :capabilities/workspace (s/and ::legacy-debean
-                                      (s/keys :opt-un [:capabilities/workspace-edit
-                                                       :capabilities/did-change-configuration
-                                                       :capabilities/did-change-watched-files
-                                                       :capabilities/execute-command
-                                                       :capabilities/symbol])))
+(s/def :client-capabilities/workspace-edit ::legacy-debean)
+(s/def :client-capabilities/did-change-configuration ::legacy-debean)
+(s/def :client-capabilities/did-change-watched-files ::legacy-debean)
+(s/def :client-capabilities/execute-command ::legacy-debean)
+(s/def :client-capabilities/symbol (s/and ::legacy-debean
+                                          (s/keys :opt-un [:client-capabilities/symbol-kind])))
+(s/def :client-capabilities/workspace (s/and ::legacy-debean
+                                                    (s/keys :opt-un [:client-capabilities/workspace-edit
+                                                                     :client-capabilities/did-change-configuration
+                                                                     :client-capabilities/did-change-watched-files
+                                                                     :client-capabilities/execute-command
+                                                                     :client-capabilities/symbol])))
 (s/def ::client-capabilities (s/and ::legacy-debean
-                                    (s/keys :opt-un [:capabilities/workspace :capabilities/text-document])))
+                                    (s/keys :opt-un [:client-capabilities/workspace :client-capabilities/text-document])))
 
-(s/def ::signature-help-provider (s/conformer #(cond (vector? %) (SignatureHelpOptions. %)
-                                                     (map? %) (SignatureHelpOptions. (:trigger-characters %) (:retrigger-characters %))
-                                                     :else (SignatureHelpOptions. %))))
-(s/def ::code-action-provider (s/conformer #(when (vector? %) (CodeActionOptions. %))))
-(s/def ::completion-provider (s/conformer #(when (map? %) (CompletionOptions. (:resolve-provider %1) (:trigger-characters %1)))))
-(s/def ::execute-command-provider (s/conformer #(when (vector? %) (doto (ExecuteCommandOptions.)
-                                                                    (.setCommands %)))))
-(s/def ::semantic-tokens-provider (s/conformer #(when (and (:token-types %)
-                                                           (:token-modifiers %)) (doto (SemanticTokensWithRegistrationOptions.)
-                                                                                   (.setLegend (doto (SemanticTokensLegend.
-                                                                                                       (:token-types %)
-                                                                                                       (:token-modifiers %))))
-                                                                                   (.setRange (:range %))
-                                                                                   (.setFull ^Boolean (get % :full false))))))
-(s/def ::text-document-sync (s/conformer #(doto (TextDocumentSyncOptions.)
-                                            (.setOpenClose true)
-                                            (.setChange (case %
-                                                          :full TextDocumentSyncKind/Full
-                                                          :incremental TextDocumentSyncKind/Incremental
-                                                          TextDocumentSyncKind/Full))
-                                            (.setSave (SaveOptions. true)))))
+(s/def :server-capabilities/signature-help-provider
+  (s/conformer #(cond (vector? %) (SignatureHelpOptions. %)
+                      (map? %) (SignatureHelpOptions. (:trigger-characters %) (:retrigger-characters %))
+                      :else (SignatureHelpOptions. %))))
+(s/def :server-capabilities/code-action-provider
+  (s/conformer #(when (vector? %) (CodeActionOptions. %))))
+(s/def :server-capabilities/completion-provider
+  (s/conformer #(when (map? %) (CompletionOptions. (:resolve-provider %1) (:trigger-characters %1)))))
+(s/def :server-capabilities/execute-command-provider
+  (s/conformer #(when (vector? %) (doto (ExecuteCommandOptions.)
+                                    (.setCommands %)))))
+(s/def :server-capabilities/semantic-tokens-provider
+  (s/conformer #(when (and (:token-types %)
+                           (:token-modifiers %)) (doto (SemanticTokensWithRegistrationOptions.)
+                                                   (.setLegend (doto (SemanticTokensLegend.
+                                                                       (:token-types %)
+                                                                       (:token-modifiers %))))
+                                                   (.setRange (:range %))
+                                                   (.setFull ^Boolean (get % :full false))))))
+(s/def :server-capabilities/text-document-sync
+  (s/conformer #(doto (TextDocumentSyncOptions.)
+                  (.setOpenClose true)
+                  (.setChange (case %
+                                :full TextDocumentSyncKind/Full
+                                :incremental TextDocumentSyncKind/Incremental
+                                TextDocumentSyncKind/Full))
+                  (.setSave (SaveOptions. true)))))
 
-(s/def ::server-capabilities (s/and (s/keys :opt-un [::document-highlight-provider
-                                                     ::signature-help-provider ::text-document-sync ::execute-command-provider ::completion-provider ::code-action-provider ::semantic-tokens-provider])
-                                    (s/conformer #(doto (ServerCapabilities.)
-                                                    (.setDocumentHighlightProvider ^Boolean (:document-highlight-provider %1))
-                                                    (.setHoverProvider ^Boolean (:hover-provider %1))
-                                                    (.setDeclarationProvider ^Boolean (:declaration-provider %1))
-                                                    (.setImplementationProvider ^Boolean (:implementation-provider %1))
-                                                    (.setSignatureHelpProvider (:signature-help-provider %1))
-                                                    (.setCallHierarchyProvider ^Boolean (:call-hierarchy-provider %1))
-                                                    (.setLinkedEditingRangeProvider ^Boolean (:linked-editing-range-provider %1))
-                                                    (.setCodeActionProvider ^CodeActionOptions (:code-action-provider %1))
-                                                    (.setCodeLensProvider (CodeLensOptions. ^Boolean (:code-lens-provider %1)))
-                                                    (.setReferencesProvider ^Boolean (:references-provider %1))
-                                                    (.setRenameProvider (RenameOptions. ^Boolean (:rename-provider %1)))
-                                                    (.setDefinitionProvider ^Boolean (:definition-provider %1))
-                                                    (.setDocumentFormattingProvider ^Boolean (:document-formatting-provider %1))
-                                                    (.setDocumentRangeFormattingProvider ^Boolean (:document-range-formatting-provider %1))
-                                                    (.setDocumentSymbolProvider ^Boolean (:document-symbol-provider %1))
-                                                    (.setWorkspaceSymbolProvider ^Boolean (:workspace-symbol-provider %1))
-                                                    (.setSemanticTokensProvider (:semantic-tokens-provider %1))
-                                                    (.setExecuteCommandProvider (:execute-command-provider %1))
-                                                    (.setTextDocumentSync ^TextDocumentSyncOptions (:text-document-sync %1))
-                                                    (.setCompletionProvider (:completion-provider %1))
-                                                    (.setExperimental (:experimental %))))))
+(s/def :file-operation-pattern/glob string?)
+(s/def :file-operation-pattern/matches string?)
+
+(s/def :file-operation-filter/pattern
+  (s/and (s/keys :req-un [:file-operation-pattern/glob]
+                 :opt-un [:file-operation-pattern/matches])
+         (s/conformer #(doto (FileOperationPattern. (:glob %))
+                         (.setMatches (:matches %))))))
+(s/def :file-operation-filter/scheme string?)
+
+(s/def :file-operation/filter
+  (s/and (s/keys :req-un [:file-operation-filter/pattern]
+                 :opt-un [:file-operation-filter/scheme])
+         (s/conformer #(FileOperationFilter. (:pattern %) (:scheme %)))))
+(s/def :file-operation/filters (s/coll-of :file-operation/filter))
+(s/def :file-operation/options
+  (s/and (s/keys :req-un [:file-operation/filters])
+         (s/conformer #(FileOperationOptions. (:filters %)))))
+
+(s/def :server-capabilities/did-create :file-operation/options)
+(s/def :server-capabilities/will-create :file-operation/options)
+(s/def :server-capabilities/did-rename :file-operation/options)
+(s/def :server-capabilities/will-rename :file-operation/options)
+(s/def :server-capabilities/did-delete :file-operation/options)
+(s/def :server-capabilities/will-delete :file-operation/options)
+
+(s/def :server-capabilities/file-operations
+  (s/and (s/keys :opt-un [:server-capabilities/did-create
+                          :server-capabilities/will-create
+                          :server-capabilities/did-rename
+                          :server-capabilities/will-rename
+                          :server-capabilities/did-delete
+                          :server-capabilities/will-delete])
+         (s/conformer #(doto (FileOperationsServerCapabilities.)
+                         (.setDidCreate (:did-create %))
+                         (.setWillCreate (:will-create %))
+                         (.setDidRename (:did-rename %))
+                         (.setWillRename (:will-rename %))
+                         (.setDidDelete (:did-delete %))
+                         (.setWillDelete (:will-delete %))))))
+
+(s/def :server-capabilities/workspace
+  (s/and (s/keys :opt-un [:server-capabilities/file-operations])
+         (s/conformer #(doto (WorkspaceServerCapabilities.)
+                         (.setFileOperations (:file-operations %))))))
+
+(s/def ::server-capabilities
+  (s/and (s/keys :opt-un [:server-capabilities/document-highlight-provider
+                          :server-capabilities/signature-help-provider
+                          :server-capabilities/text-document-sync
+                          :server-capabilities/execute-command-provider
+                          :server-capabilities/completion-provider
+                          :server-capabilities/code-action-provider
+                          :server-capabilities/semantic-tokens-provider
+                          :server-capabilities/workspace])
+         (s/conformer #(doto (ServerCapabilities.)
+                         (.setDocumentHighlightProvider ^Boolean (:document-highlight-provider %1))
+                         (.setHoverProvider ^Boolean (:hover-provider %1))
+                         (.setDeclarationProvider ^Boolean (:declaration-provider %1))
+                         (.setImplementationProvider ^Boolean (:implementation-provider %1))
+                         (.setSignatureHelpProvider (:signature-help-provider %1))
+                         (.setCallHierarchyProvider ^Boolean (:call-hierarchy-provider %1))
+                         (.setLinkedEditingRangeProvider ^Boolean (:linked-editing-range-provider %1))
+                         (.setCodeActionProvider ^CodeActionOptions (:code-action-provider %1))
+                         (.setCodeLensProvider (CodeLensOptions. ^Boolean (:code-lens-provider %1)))
+                         (.setReferencesProvider ^Boolean (:references-provider %1))
+                         (.setRenameProvider (RenameOptions. ^Boolean (:rename-provider %1)))
+                         (.setDefinitionProvider ^Boolean (:definition-provider %1))
+                         (.setDocumentFormattingProvider ^Boolean (:document-formatting-provider %1))
+                         (.setDocumentRangeFormattingProvider ^Boolean (:document-range-formatting-provider %1))
+                         (.setDocumentSymbolProvider ^Boolean (:document-symbol-provider %1))
+                         (.setWorkspaceSymbolProvider ^Boolean (:workspace-symbol-provider %1))
+                         (.setSemanticTokensProvider (:semantic-tokens-provider %1))
+                         (.setExecuteCommandProvider (:execute-command-provider %1))
+                         (.setTextDocumentSync ^TextDocumentSyncOptions (:text-document-sync %1))
+                         (.setCompletionProvider (:completion-provider %1))
+                         (.setWorkspace (:workspace %1))
+                         (.setExperimental (:experimental %))))))
 
 (defn conform-or-log [spec value]
   (when value

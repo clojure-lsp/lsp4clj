@@ -24,8 +24,10 @@
      CodeLensWorkspaceCapabilities
      CompletionItem
      CompletionParams
+     CreateFilesParams
      DeclarationParams
      DefinitionParams
+     DeleteFilesParams
      DidChangeConfigurationParams
      DidChangeTextDocumentParams
      DidChangeWatchedFilesParams
@@ -50,6 +52,7 @@
      ReferenceParams
      Registration
      RegistrationParams
+     RenameFilesParams
      RenameParams
      SemanticTokensParams
      SemanticTokensRangeParams
@@ -222,14 +225,38 @@
     (in-completable-future
       (handle-notification params feature-handler/did-change-watched-files handler)))
 
-  ;; TODO wait for lsp4j release
+  ;; TODO implement it, but should we do anything?
   #_(^void didDeleteFiles [_ ^DeleteFilesParams params]
                           (in-completable-future
                             (handle-notification params handler/did-delete-files handler)))
 
   (^CompletableFuture symbol [_ ^WorkspaceSymbolParams params]
     (in-completable-future
-      (handle-request params feature-handler/workspace-symbols handler ::coercer/workspace-symbols))))
+      (handle-request params feature-handler/workspace-symbols handler ::coercer/workspace-symbols)))
+
+  (^CompletableFuture willCreateFiles [_ ^CreateFilesParams params]
+    (in-completable-future
+      (handle-request params feature-handler/will-create-files handler ::coercer/workspace-edit)))
+
+  (^void didCreateFiles [_ ^CreateFilesParams params]
+    (in-completable-future
+      (handle-notification params feature-handler/did-create-files handler)))
+
+  (^CompletableFuture willRenameFiles [_ ^RenameFilesParams params]
+    (in-completable-future
+      (handle-request params feature-handler/will-rename-files handler ::coercer/workspace-edit)))
+
+  (^void didRenameFiles [_ ^RenameFilesParams params]
+    (in-completable-future
+      (handle-notification params feature-handler/did-rename-files handler)))
+
+  (^CompletableFuture willDeleteFiles [_ ^DeleteFilesParams params]
+    (in-completable-future
+      (handle-request params feature-handler/will-delete-files handler ::coercer/workspace-edit)))
+
+  (^void didDeleteFiles [_ ^DeleteFilesParams params]
+    (in-completable-future
+      (handle-notification params feature-handler/did-delete-files handler))))
 
 (defn client-capabilities
   [^InitializeParams params]
