@@ -102,7 +102,11 @@
 
   (^void didSave [_ ^DidSaveTextDocumentParams params]
     (future
-      (handle-notification params feature-handler/did-save handler))
+      (try
+        (handle-notification params feature-handler/did-save handler)
+        (catch Throwable e
+          (logger/error e)
+          (throw e))))
     (CompletableFuture/completedFuture 0))
 
   (^void didClose [_ ^DidCloseTextDocumentParams params]
@@ -212,7 +216,11 @@
   WorkspaceService
   (^CompletableFuture executeCommand [_ ^ExecuteCommandParams params]
     (future
-      (handle-notification params feature-handler/execute-command handler))
+      (try
+        (handle-notification params feature-handler/execute-command handler)
+        (catch Throwable e
+          (logger/error e)
+          (throw e))))
     (CompletableFuture/completedFuture 0))
 
   (^void didChangeConfiguration [_ ^DidChangeConfigurationParams params]
