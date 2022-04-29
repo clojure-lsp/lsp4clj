@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+## v0.3.0
+
 - Improve logging of exceptions.
 
 ## v0.2.0
