@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+## v0.4.0
+
 - Bump lsp4j to 0.14.0
 
 ## v0.3.0
