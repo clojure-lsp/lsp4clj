@@ -19,6 +19,7 @@
          lint-fix (do (shell "clojure-lsp format")
                       (shell "clojure-lsp clean-ns"))
 
+         ;; Receive arg without v
          tag lsp4clj.ci/tag
 
          deploy-clojars-server (shell {:dir "server"} "clojure -T:build deploy-clojars")
