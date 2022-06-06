@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Bump lsp4j to 0.14.0
+
 ## v0.3.0
 
 - Improve logging of exceptions.
