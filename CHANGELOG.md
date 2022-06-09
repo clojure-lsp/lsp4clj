@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- fix: shutdown request to return null instead of empty object
+
 ## v0.4.0
 
 - Bump lsp4j to 0.14.0

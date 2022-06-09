@@ -342,7 +342,7 @@
     (logger/info server-logger-tag "Shutting down")
     (reset! db initial-db)
     (CompletableFuture/completedFuture
-      {:result nil}))
+      nil))
   (exit [_]
     (logger/info server-logger-tag "Exiting...")
     (shutdown-agents)
