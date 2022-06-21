@@ -51,7 +51,6 @@
      CreateFile
      RenameFile
      RenameOptions
-     ResponseErrorCode
      PrepareRenameResult
      SaveOptions
      SemanticTokens
@@ -81,7 +80,8 @@
      ResponseErrorException)
    (org.eclipse.lsp4j.jsonrpc.messages
      Either
-     ResponseError)))
+     ResponseError
+     ResponseErrorCode)))
 
 (set! *warn-on-reflection* true)
 
