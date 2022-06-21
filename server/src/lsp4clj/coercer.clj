@@ -639,7 +639,7 @@
 
 (s/def :client-capabilities/resolve-support ::debean)
 
-(s/def :client-capabilities/completion-item (s/and ::debean
+(s/def :client-capabilities/completion-item (s/and ::legacy-debean
                                                    (s/keys :opt-un [:client-capabilities/resolve-support])))
 
 (s/def :client-capabilities/completion-item-kind-value-set
