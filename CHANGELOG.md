@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+## v0.4.2
+
 ## v0.4.1
 
 - fix: shutdown request to return null instead of empty object
