@@ -51,7 +51,6 @@
      CreateFile
      RenameFile
      RenameOptions
-     ResponseErrorCode
      PrepareRenameResult
      SaveOptions
      SemanticTokens
@@ -81,7 +80,8 @@
      ResponseErrorException)
    (org.eclipse.lsp4j.jsonrpc.messages
      Either
-     ResponseError)))
+     ResponseError
+     ResponseErrorCode)))
 
 (set! *warn-on-reflection* true)
 
@@ -611,7 +611,6 @@
 (s/def :client-capabilities/code-action ::legacy-debean)
 (s/def :client-capabilities/code-lens ::legacy-debean)
 (s/def :client-capabilities/color-provider ::legacy-debean)
-(s/def :client-capabilities/completion-item ::legacy-debean)
 (s/def :client-capabilities/definition ::legacy-debean)
 (s/def :client-capabilities/document-highlight ::legacy-debean)
 (s/def :client-capabilities/document-link ::legacy-debean)
@@ -637,6 +636,11 @@
                                                    (s/keys :opt-un [:client-capabilities/symbol-kind])))
 (s/def :client-capabilities/signature-help (s/and ::debean
                                                   (s/keys :opt-un [:client-capabilities/signature-information])))
+
+(s/def :client-capabilities/resolve-support ::debean)
+
+(s/def :client-capabilities/completion-item (s/and ::debean
+                                                   (s/keys :opt-un [:client-capabilities/resolve-support])))
 
 (s/def :client-capabilities/completion-item-kind-value-set
   (s/conformer (fn [value-set]
