@@ -19,7 +19,7 @@
                 :basis (b/create-basis {:project "deps.edn"})
                 :src-dirs ["../protocols/src" "src"]
                 :resource-dirs ["resources"]
-                :scm {:tag current-version}}))
+                :scm {:tag (str "v" current-version)}}))
 
 (defn jar [opts]
   (pom opts)
