@@ -92,7 +92,7 @@
              (catch Throwable ~ex-sym
                (if (instance? ResponseErrorException ~ex-sym)
                  (throw (CompletionException. ~ex-sym))
-                 ~(with-meta `(logger/error ~server-logger-tag ~ex-sym) m)))))))))
+                 ~(with-meta `(logger/error ~ex-sym ~server-logger-tag) m)))))))))
 
 (deftype LSPTextDocumentService
          [^ILSPFeatureHandler handler]
@@ -383,7 +383,7 @@
               (.write system-out buffer)
               (recur (.read is buffer 0 buffer-size)))))
         (catch Exception e
-          (logger/error server-logger-tag e "in thread"))))
+          (logger/error e server-logger-tag "in thread"))))
     os))
 
 #_{:clj-kondo/ignore [:clojure-lsp/unused-public-var]}
