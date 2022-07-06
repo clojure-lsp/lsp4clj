@@ -2,8 +2,8 @@
 /.lein-repl-history
 /.lein-failures
 .nrepl-port
-**/*/.lsp/.cache
-**/*/.clj-kondo/.cache
+**/**/.lsp/.cache
+**/**/.clj-kondo/.cache
 /out
 target/
 /.DS_Store

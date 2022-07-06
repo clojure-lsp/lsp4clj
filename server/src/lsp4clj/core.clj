@@ -29,11 +29,15 @@
      DefinitionParams
      DeleteFilesParams
      DidChangeConfigurationParams
+     DidChangeNotebookDocumentParams
      DidChangeTextDocumentParams
      DidChangeWatchedFilesParams
      DidChangeWatchedFilesRegistrationOptions
+     DidCloseNotebookDocumentParams
      DidCloseTextDocumentParams
+     DidOpenNotebookDocumentParams
      DidOpenTextDocumentParams
+     DidSaveNotebookDocumentParams
      DidSaveTextDocumentParams
      DocumentFormattingParams
      DocumentHighlightParams
@@ -63,6 +67,7 @@
    (org.eclipse.lsp4j.services
      LanguageClient
      LanguageServer
+     NotebookDocumentService
      TextDocumentService
      WorkspaceService))
   (:gen-class))
@@ -266,6 +271,25 @@
     (in-completable-future
       (handle-notification params feature-handler/did-delete-files handler))))
 
+(deftype NotebookService
+         [^ILSPFeatureHandler handler]
+  NotebookDocumentService
+  (^void didOpen [_ ^DidOpenNotebookDocumentParams params]
+    (in-completable-future
+      (handle-notification params feature-handler/did-open-notebook-document handler)))
+
+  (^void didClose [_ ^DidCloseNotebookDocumentParams params]
+    (in-completable-future
+      (handle-notification params feature-handler/did-close-notebook-document handler)))
+
+  (^void didChange [_ ^DidChangeNotebookDocumentParams params]
+    (in-completable-future
+      (handle-notification params feature-handler/did-change-notebook-document handler)))
+
+  (^void didSave [_ ^DidSaveNotebookDocumentParams params]
+    (in-completable-future
+      (handle-notification params feature-handler/did-save-notebook-document handler))))
+
 (defn client-capabilities
   [^InitializeParams params]
   (some->> params
@@ -336,7 +360,8 @@
       (RegistrationParams.
         [(Registration. "id" "workspace/didChangeWatchedFiles"
                         (DidChangeWatchedFilesRegistrationOptions.
-                          [(FileSystemWatcher. files)]))])))
+                          [(doto (FileSystemWatcher.)
+                             (.setGlobPattern ^String files))]))])))
 
   (^CompletableFuture shutdown [_]
     (logger/info server-logger-tag "Shutting down")
@@ -349,6 +374,8 @@
     (System/exit 0))
   (getTextDocumentService [_]
     (LSPTextDocumentService. feature-handler))
+  (getNotebookDocumentService [_]
+    (NotebookService. feature-handler))
   (getWorkspaceService [_]
     (LSPWorkspaceService. feature-handler)))
 
