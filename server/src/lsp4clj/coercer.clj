@@ -39,6 +39,9 @@
      MarkupContent
      MessageActionItem
      MessageParams
+     NotebookSelectorCell
+     NotebookDocumentSyncRegistrationOptions
+     NotebookSelector
      ShowMessageRequestParams
      MessageType
      LinkedEditingRanges
@@ -616,6 +619,7 @@
 (s/def :client-capabilities/document-link ::legacy-debean)
 (s/def :client-capabilities/formatting ::legacy-debean)
 (s/def :client-capabilities/implementation ::legacy-debean)
+(s/def :client-capabilities/notebook-document ::legacy-debean)
 (s/def :client-capabilities/on-type-formatting ::legacy-debean)
 (s/def :client-capabilities/publish-diagnostics ::legacy-debean)
 (s/def :client-capabilities/range-formatting ::legacy-debean)
@@ -682,13 +686,15 @@
 (s/def :client-capabilities/symbol (s/and ::legacy-debean
                                           (s/keys :opt-un [:client-capabilities/symbol-kind])))
 (s/def :client-capabilities/workspace (s/and ::legacy-debean
-                                                    (s/keys :opt-un [:client-capabilities/workspace-edit
-                                                                     :client-capabilities/did-change-configuration
-                                                                     :client-capabilities/did-change-watched-files
-                                                                     :client-capabilities/execute-command
-                                                                     :client-capabilities/symbol])))
+                                             (s/keys :opt-un [:client-capabilities/workspace-edit
+                                                              :client-capabilities/did-change-configuration
+                                                              :client-capabilities/did-change-watched-files
+                                                              :client-capabilities/execute-command
+                                                              :client-capabilities/symbol])))
 (s/def ::client-capabilities (s/and ::legacy-debean
-                                    (s/keys :opt-un [:client-capabilities/workspace :client-capabilities/text-document])))
+                                    (s/keys :opt-un [:client-capabilities/workspace
+                                                     :client-capabilities/text-document
+                                                     :client-capabilities/notebook-document])))
 
 (s/def :server-capabilities/signature-help-provider
   (s/conformer #(cond (vector? %) (SignatureHelpOptions. %)
@@ -759,6 +765,24 @@
                          (.setDidDelete (:did-delete %))
                          (.setWillDelete (:will-delete %))))))
 
+(s/def :notebook-document-selector/cells
+  (s/conformer (fn [element] (when (vector? element) (map #(NotebookSelectorCell. %) element)))))
+
+(s/def :notebook-document-sync/selector
+  (s/and (s/keys :opt-un [:notebook-document-selector/notebook
+                          :notebook-document-selector/cells])
+         (s/conformer #(doto (NotebookSelector.)
+                         (.setNotebook ^String (:notebook %))
+                         (.setCells (:cells %))))))
+
+(s/def :notebook-document-sync/selectors (s/coll-of :notebook-document-sync/selector))
+
+(s/def :server-capabilities/notebook-document-sync
+  (s/and (s/keys :req-un [:notebook-document-sync/selectors]
+                 :opt-un [:notebook-document-sync/save])
+         (s/conformer #(NotebookDocumentSyncRegistrationOptions. (:selectors %)
+                                                                 (:save %)))))
+
 (s/def :server-capabilities/workspace
   (s/and (s/keys :opt-un [:server-capabilities/file-operations])
          (s/conformer #(doto (WorkspaceServerCapabilities.)
@@ -772,6 +796,7 @@
                           :server-capabilities/completion-provider
                           :server-capabilities/code-action-provider
                           :server-capabilities/semantic-tokens-provider
+                          :server-capabilities/notebook-document-sync
                           :server-capabilities/workspace])
          (s/conformer #(doto (ServerCapabilities.)
                          (.setDocumentHighlightProvider ^Boolean (:document-highlight-provider %1))
@@ -795,6 +820,7 @@
                          (.setTextDocumentSync ^TextDocumentSyncOptions (:text-document-sync %1))
                          (.setCompletionProvider (:completion-provider %1))
                          (.setWorkspace (:workspace %1))
+                         (.setNotebookDocumentSync (:notebook-document-sync %1))
                          (.setExperimental (:experimental %))))))
 
 (defn conform-or-log [spec value]
