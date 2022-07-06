@@ -69,6 +69,19 @@
 
 (set! *warn-on-reflection* true)
 
+(def null-output-stream-writer
+  (java.io.OutputStreamWriter.
+    (proxy [java.io.OutputStream] []
+      (write
+        ([^bytes b])
+        ([^bytes b, off, len])))))
+
+(defmacro capturing-stdout
+  "Evaluates body in a context in which writes to *out* are discarded."
+  [& body]
+  `(binding [*out* null-output-stream-writer]
+     ~@body))
+
 (def ^:private server-logger-tag "[Server]")
 
 (defonce ^:private formatting (atom false))
@@ -98,140 +111,170 @@
          [^ILSPFeatureHandler handler]
   TextDocumentService
   (^void didOpen [_ ^DidOpenTextDocumentParams params]
-    (handle-notification params feature-handler/did-open handler))
+    (capturing-stdout
+      (handle-notification params feature-handler/did-open handler)))
 
   (^void didChange [_ ^DidChangeTextDocumentParams params]
-    (handle-notification params feature-handler/did-change handler))
+    (capturing-stdout
+      (handle-notification params feature-handler/did-change handler)))
 
   (^void didSave [_ ^DidSaveTextDocumentParams params]
     (future
-      (try
-        (handle-notification params feature-handler/did-save handler)
-        (catch Throwable e
-          (logger/error e)
-          (throw e))))
+      (capturing-stdout
+        (try
+          (handle-notification params feature-handler/did-save handler)
+          (catch Throwable e
+            (logger/error e)
+            (throw e)))))
     (CompletableFuture/completedFuture 0))
 
   (^void didClose [_ ^DidCloseTextDocumentParams params]
     (in-completable-future
-      (handle-notification params feature-handler/did-close handler)))
+      (capturing-stdout
+        (handle-notification params feature-handler/did-close handler))))
 
   (^CompletableFuture references [_ ^ReferenceParams params]
     (in-completable-future
-      (handle-request params feature-handler/references handler ::coercer/locations)))
+      (capturing-stdout
+        (handle-request params feature-handler/references handler ::coercer/locations))))
 
   (^CompletableFuture completion [_ ^CompletionParams params]
     (in-completable-future
-      (handle-request params feature-handler/completion handler ::coercer/completion-items)))
+      (capturing-stdout
+        (handle-request params feature-handler/completion handler ::coercer/completion-items))))
 
   (^CompletableFuture resolveCompletionItem [_ ^CompletionItem item]
     (in-completable-future
-      (handle-request item feature-handler/completion-resolve-item handler ::coercer/completion-item)))
+      (capturing-stdout
+        (handle-request item feature-handler/completion-resolve-item handler ::coercer/completion-item))))
 
   (^CompletableFuture prepareRename [_ ^PrepareRenameParams params]
     (in-completable-future
-      (handle-request params feature-handler/prepare-rename handler ::coercer/prepare-rename-or-error)))
+      (capturing-stdout
+        (handle-request params feature-handler/prepare-rename handler ::coercer/prepare-rename-or-error))))
 
   (^CompletableFuture rename [_ ^RenameParams params]
     (in-completable-future
-      (handle-request params feature-handler/rename handler ::coercer/workspace-edit-or-error)))
+      (capturing-stdout
+        (handle-request params feature-handler/rename handler ::coercer/workspace-edit-or-error))))
 
   (^CompletableFuture hover [_ ^HoverParams params]
     (in-completable-future
-      (handle-request params feature-handler/hover handler ::coercer/hover)))
+      (capturing-stdout
+        (handle-request params feature-handler/hover handler ::coercer/hover))))
 
   (^CompletableFuture signatureHelp [_ ^SignatureHelpParams params]
     (in-completable-future
-      (handle-request params feature-handler/signature-help handler ::coercer/signature-help)))
+      (capturing-stdout
+        (handle-request params feature-handler/signature-help handler ::coercer/signature-help))))
 
   (^CompletableFuture formatting [_ ^DocumentFormattingParams params]
     (in-completable-future
-      (handle-request params feature-handler/formatting handler ::coercer/edits)))
+      (capturing-stdout
+        (handle-request params feature-handler/formatting handler ::coercer/edits))))
 
   (^CompletableFuture rangeFormatting [_this ^DocumentRangeFormattingParams params]
     (CompletableFuture/completedFuture
-      (when (compare-and-set! formatting false true)
-        (try
-          (handle-request params feature-handler/range-formatting handler ::coercer/edits)
-          (catch Exception e
-            (logger/error e))
-          (finally
-            (reset! formatting false))))))
+      (capturing-stdout
+        (when (compare-and-set! formatting false true)
+          (try
+            (handle-request params feature-handler/range-formatting handler ::coercer/edits)
+            (catch Exception e
+              (logger/error e))
+            (finally
+              (reset! formatting false)))))))
 
   (^CompletableFuture codeAction [_ ^CodeActionParams params]
     (in-completable-future
-      (handle-request params feature-handler/code-actions handler ::coercer/code-actions)))
+      (capturing-stdout
+        (handle-request params feature-handler/code-actions handler ::coercer/code-actions))))
 
   (^CompletableFuture codeLens [_ ^CodeLensParams params]
     (in-completable-future
-      (handle-request params feature-handler/code-lens handler ::coercer/code-lenses)))
+      (capturing-stdout
+        (handle-request params feature-handler/code-lens handler ::coercer/code-lenses))))
 
   (^CompletableFuture resolveCodeLens [_ ^CodeLens params]
     (in-completable-future
-      (handle-request params feature-handler/code-lens-resolve handler ::coercer/code-lens)))
+      (capturing-stdout
+        (handle-request params feature-handler/code-lens-resolve handler ::coercer/code-lens))))
 
   (^CompletableFuture definition [_ ^DefinitionParams params]
     (in-completable-future
-      (handle-request params feature-handler/definition handler ::coercer/location)))
+      (capturing-stdout
+        (handle-request params feature-handler/definition handler ::coercer/location))))
 
   (^CompletableFuture declaration [_ ^DeclarationParams params]
     (in-completable-future
-      (handle-request params feature-handler/declaration handler ::coercer/location)))
+      (capturing-stdout
+        (handle-request params feature-handler/declaration handler ::coercer/location))))
 
   (^CompletableFuture implementation [_ ^ImplementationParams params]
     (in-completable-future
-      (handle-request params feature-handler/implementation handler ::coercer/locations)))
+      (capturing-stdout
+        (handle-request params feature-handler/implementation handler ::coercer/locations))))
 
   (^CompletableFuture documentSymbol [_ ^DocumentSymbolParams params]
     (in-completable-future
-      (handle-request params feature-handler/document-symbol handler ::coercer/document-symbols)))
+      (capturing-stdout
+        (handle-request params feature-handler/document-symbol handler ::coercer/document-symbols))))
 
   (^CompletableFuture documentHighlight [_ ^DocumentHighlightParams params]
     (in-completable-future
-      (handle-request params feature-handler/document-highlight handler ::coercer/document-highlights)))
+      (capturing-stdout
+        (handle-request params feature-handler/document-highlight handler ::coercer/document-highlights))))
 
   (^CompletableFuture semanticTokensFull [_ ^SemanticTokensParams params]
     (in-completable-future
-      (handle-request params feature-handler/semantic-tokens-full handler ::coercer/semantic-tokens)))
+      (capturing-stdout
+        (handle-request params feature-handler/semantic-tokens-full handler ::coercer/semantic-tokens))))
 
   (^CompletableFuture semanticTokensRange [_ ^SemanticTokensRangeParams params]
     (in-completable-future
-      (handle-request params feature-handler/semantic-tokens-range handler ::coercer/semantic-tokens)))
+      (capturing-stdout
+        (handle-request params feature-handler/semantic-tokens-range handler ::coercer/semantic-tokens))))
 
   (^CompletableFuture prepareCallHierarchy [_ ^CallHierarchyPrepareParams params]
     (in-completable-future
-      (handle-request params feature-handler/prepare-call-hierarchy handler ::coercer/call-hierarchy-items)))
+      (capturing-stdout
+        (handle-request params feature-handler/prepare-call-hierarchy handler ::coercer/call-hierarchy-items))))
 
   (^CompletableFuture callHierarchyIncomingCalls [_ ^CallHierarchyIncomingCallsParams params]
     (in-completable-future
-      (handle-request params feature-handler/call-hierarchy-incoming handler ::coercer/call-hierarchy-incoming-calls)))
+      (capturing-stdout
+        (handle-request params feature-handler/call-hierarchy-incoming handler ::coercer/call-hierarchy-incoming-calls))))
 
   (^CompletableFuture callHierarchyOutgoingCalls [_ ^CallHierarchyOutgoingCallsParams params]
     (in-completable-future
-      (handle-request params feature-handler/call-hierarchy-outgoing handler ::coercer/call-hierarchy-outgoing-calls)))
+      (capturing-stdout
+        (handle-request params feature-handler/call-hierarchy-outgoing handler ::coercer/call-hierarchy-outgoing-calls))))
 
   (^CompletableFuture linkedEditingRange [_ ^LinkedEditingRangeParams params]
     (in-completable-future
-      (handle-request params feature-handler/linked-editing-ranges handler ::coercer/linked-editing-ranges-or-error))))
+      (capturing-stdout
+        (handle-request params feature-handler/linked-editing-ranges handler ::coercer/linked-editing-ranges-or-error)))))
 
 (deftype LSPWorkspaceService
          [^ILSPFeatureHandler handler]
   WorkspaceService
   (^CompletableFuture executeCommand [_ ^ExecuteCommandParams params]
     (future
-      (try
-        (handle-notification params feature-handler/execute-command handler)
-        (catch Throwable e
-          (logger/error e)
-          (throw e))))
+      (capturing-stdout
+        (try
+          (handle-notification params feature-handler/execute-command handler)
+          (catch Throwable e
+            (logger/error e)
+            (throw e)))))
     (CompletableFuture/completedFuture 0))
 
   (^void didChangeConfiguration [_ ^DidChangeConfigurationParams params]
-    (logger/warn (coercer/java->clj params)))
+    (capturing-stdout
+      (logger/warn (coercer/java->clj params))))
 
   (^void didChangeWatchedFiles [_ ^DidChangeWatchedFilesParams params]
     (in-completable-future
-      (handle-notification params feature-handler/did-change-watched-files handler)))
+      (capturing-stdout
+        (handle-notification params feature-handler/did-change-watched-files handler))))
 
   ;; TODO implement it, but should we do anything?
   #_(^void didDeleteFiles [_ ^DeleteFilesParams params]
@@ -240,31 +283,38 @@
 
   (^CompletableFuture symbol [_ ^WorkspaceSymbolParams params]
     (in-completable-future
-      (handle-request params feature-handler/workspace-symbols handler ::coercer/workspace-symbols)))
+      (capturing-stdout
+        (handle-request params feature-handler/workspace-symbols handler ::coercer/workspace-symbols))))
 
   (^CompletableFuture willCreateFiles [_ ^CreateFilesParams params]
     (in-completable-future
-      (handle-request params feature-handler/will-create-files handler ::coercer/workspace-edit)))
+      (capturing-stdout
+        (handle-request params feature-handler/will-create-files handler ::coercer/workspace-edit))))
 
   (^void didCreateFiles [_ ^CreateFilesParams params]
     (in-completable-future
-      (handle-notification params feature-handler/did-create-files handler)))
+      (capturing-stdout
+        (handle-notification params feature-handler/did-create-files handler))))
 
   (^CompletableFuture willRenameFiles [_ ^RenameFilesParams params]
     (in-completable-future
-      (handle-request params feature-handler/will-rename-files handler ::coercer/workspace-edit)))
+      (capturing-stdout
+        (handle-request params feature-handler/will-rename-files handler ::coercer/workspace-edit))))
 
   (^void didRenameFiles [_ ^RenameFilesParams params]
     (in-completable-future
-      (handle-notification params feature-handler/did-rename-files handler)))
+      (capturing-stdout
+        (handle-notification params feature-handler/did-rename-files handler))))
 
   (^CompletableFuture willDeleteFiles [_ ^DeleteFilesParams params]
     (in-completable-future
-      (handle-request params feature-handler/will-delete-files handler ::coercer/workspace-edit)))
+      (capturing-stdout
+        (handle-request params feature-handler/will-delete-files handler ::coercer/workspace-edit))))
 
   (^void didDeleteFiles [_ ^DeleteFilesParams params]
     (in-completable-future
-      (handle-notification params feature-handler/did-delete-files handler))))
+      (capturing-stdout
+        (handle-notification params feature-handler/did-delete-files handler)))))
 
 (defn client-capabilities
   [^InitializeParams params]
@@ -314,39 +364,43 @@
           files]
   LanguageServer
   (^CompletableFuture initialize [this ^InitializeParams params]
-    (logger/info server-logger-tag "Initializing...")
-    (feature-handler/initialize feature-handler
-                                (.getRootUri params)
-                                (client-capabilities params)
+    (capturing-stdout
+      (logger/info server-logger-tag "Initializing...")
+      (feature-handler/initialize feature-handler
+                                  (.getRootUri params)
+                                  (client-capabilities params)
 
-                                (-> params
-                                    coercer/java->clj
-                                    client-settings)
-                                (some-> (.getWorkDoneToken params) .get str))
-    (when-let [parent-process-id (.getProcessId params)]
-      (start-parent-process-liveness-probe! parent-process-id this))
-    (let [capabilities (capabilities-fn db)]
-      (CompletableFuture/completedFuture
-        (InitializeResult. (coercer/conform-or-log ::coercer/server-capabilities capabilities)))))
+                                  (-> params
+                                      coercer/java->clj
+                                      client-settings)
+                                  (some-> (.getWorkDoneToken params) .get str))
+      (when-let [parent-process-id (.getProcessId params)]
+        (start-parent-process-liveness-probe! parent-process-id this))
+      (let [capabilities (capabilities-fn db)]
+        (CompletableFuture/completedFuture
+          (InitializeResult. (coercer/conform-or-log ::coercer/server-capabilities capabilities))))))
 
   (^void initialized [_ ^InitializedParams _params]
-    (logger/info server-logger-tag "Initialized!")
-    (producer/register-capability
-      @producer*
-      (RegistrationParams.
-        [(Registration. "id" "workspace/didChangeWatchedFiles"
-                        (DidChangeWatchedFilesRegistrationOptions.
-                          [(FileSystemWatcher. files)]))])))
+    (capturing-stdout
+      (logger/info server-logger-tag "Initialized!")
+      (producer/register-capability
+        @producer*
+        (RegistrationParams.
+          [(Registration. "id" "workspace/didChangeWatchedFiles"
+                          (DidChangeWatchedFilesRegistrationOptions.
+                            [(FileSystemWatcher. files)]))]))))
 
   (^CompletableFuture shutdown [_]
-    (logger/info server-logger-tag "Shutting down")
-    (reset! db initial-db)
-    (CompletableFuture/completedFuture
-      nil))
+    (capturing-stdout
+      (logger/info server-logger-tag "Shutting down")
+      (reset! db initial-db)
+      (CompletableFuture/completedFuture
+        nil)))
   (exit [_]
-    (logger/info server-logger-tag "Exiting...")
-    (shutdown-agents)
-    (System/exit 0))
+    (capturing-stdout
+      (logger/info server-logger-tag "Exiting...")
+      (shutdown-agents)
+      (System/exit 0)))
   (getTextDocumentService [_]
     (LSPTextDocumentService. feature-handler))
   (getWorkspaceService [_]
@@ -391,63 +445,71 @@
   producer/ILSPProducer
 
   (publish-diagnostic [_this diagnostic]
-    (->> diagnostic
-         (coercer/conform-or-log ::coercer/publish-diagnostics-params)
-         (.publishDiagnostics client)))
+    (capturing-stdout
+      (->> diagnostic
+           (coercer/conform-or-log ::coercer/publish-diagnostics-params)
+           (.publishDiagnostics client))))
 
   (refresh-code-lens [_this]
-    (when-let [code-lens-capability ^CodeLensWorkspaceCapabilities (get-in @db [:client-capabilities :workspace :code-lens])]
-      (when (.getRefreshSupport code-lens-capability)
-        (.refreshCodeLenses client))))
+    (capturing-stdout
+      (when-let [code-lens-capability ^CodeLensWorkspaceCapabilities (get-in @db [:client-capabilities :workspace :code-lens])]
+        (when (.getRefreshSupport code-lens-capability)
+          (.refreshCodeLenses client)))))
 
   (publish-workspace-edit [_this edit]
-    (->> edit
-         (coercer/conform-or-log ::coercer/workspace-edit-or-error)
-         ApplyWorkspaceEditParams.
-         (.applyEdit client)))
+    (capturing-stdout
+      (->> edit
+           (coercer/conform-or-log ::coercer/workspace-edit-or-error)
+           ApplyWorkspaceEditParams.
+           (.applyEdit client))))
 
   (show-document-request [_this document-request]
-    (logger/info server-logger-tag "Requesting to show on editor the document" document-request)
-    (when (.getShowDocument ^WindowClientCapabilities (get-in @db [:client-capabilities :window]))
-      (->> document-request
-           (coercer/conform-or-log ::coercer/show-document-request)
-           (.showDocument client))))
+    (capturing-stdout
+      (logger/info server-logger-tag "Requesting to show on editor the document" document-request)
+      (when (.getShowDocument ^WindowClientCapabilities (get-in @db [:client-capabilities :window]))
+        (->> document-request
+             (coercer/conform-or-log ::coercer/show-document-request)
+             (.showDocument client)))))
 
   (publish-progress [_this percentage message progress-token]
-    (let [progress (case (int percentage)
-                     0 {:kind :begin
-                        :title message
-                        :percentage percentage}
-                     100 {:kind :end
-                          :message message
-                          :percentage 100}
-                     {:kind :report
-                      :message message
-                      :percentage percentage})]
-      (->> {:token (or progress-token "clojure-lsp")
-            :value progress}
-           (coercer/conform-or-log ::coercer/notify-progress)
-           (.notifyProgress client))))
+    (capturing-stdout
+      (let [progress (case (int percentage)
+                       0 {:kind :begin
+                          :title message
+                          :percentage percentage}
+                       100 {:kind :end
+                            :message message
+                            :percentage 100}
+                       {:kind :report
+                        :message message
+                        :percentage percentage})]
+        (->> {:token (or progress-token "clojure-lsp")
+              :value progress}
+             (coercer/conform-or-log ::coercer/notify-progress)
+             (.notifyProgress client)))))
 
   (show-message-request [_this message type actions]
-    (let [result (->> {:type type
-                       :message message
-                       :actions actions}
-                      (coercer/conform-or-log ::coercer/show-message-request)
-                      (.showMessageRequest client)
-                      .get)]
-      (.getTitle ^MessageActionItem result)))
+    (capturing-stdout
+      (let [result (->> {:type type
+                         :message message
+                         :actions actions}
+                        (coercer/conform-or-log ::coercer/show-message-request)
+                        (.showMessageRequest client)
+                        .get)]
+        (.getTitle ^MessageActionItem result))))
 
   (show-message [_this message type extra]
-    (let [message-content {:message message
-                           :type type
-                           :extra extra}]
-      (logger/info message-content)
-      (->> message-content
-           (coercer/conform-or-log ::coercer/show-message)
-           (.showMessage client))))
+    (capturing-stdout
+      (let [message-content {:message message
+                             :type type
+                             :extra extra}]
+        (logger/info message-content)
+        (->> message-content
+             (coercer/conform-or-log ::coercer/show-message)
+             (.showMessage client)))))
 
   (register-capability [_this capability]
-    (.registerCapability
-      client
-      capability)))
+    (capturing-stdout
+      (.registerCapability
+        client
+        capability))))
