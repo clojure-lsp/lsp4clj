@@ -7,16 +7,16 @@
    [lsp4clj.protocols.logger :as logger]))
 
 (defn ^:private receive-message
-  [server message]
+  [server context message]
   (if-let [{:keys [id method] :as json} message]
     (try
       (cond
         ;; TODO: if server generates nil response, convert to valid, empty response
-        (and id method) (protocols.endpoint/receive-request server json)
+        (and id method) (protocols.endpoint/receive-request server context json)
         id              (do (protocols.endpoint/receive-response server json)
                             ;; Ensure server doesn't respond to responses
                             nil)
-        :else           (do (protocols.endpoint/receive-notification server json)
+        :else           (do (protocols.endpoint/receive-notification server context json)
                             ;; Ensure server doesn't respond to notifications
                             nil))
       (catch Throwable e
@@ -33,14 +33,14 @@
 (defn ^:private trace-sending-request [req] (logger/debug "trace - sending request" req))
 (defn ^:private trace-sending-response [resp] (logger/debug "trace - sending response" resp))
 
-(defmulti handle-request (fn [method _params] method))
-(defmulti handle-notification (fn [method _params] method))
+(defmulti handle-request (fn [method _context _params] method))
+(defmulti handle-notification (fn [method _context _params] method))
 
-(defmethod handle-request :default [method _params]
+(defmethod handle-request :default [method _context _params]
   (logger/debug "received unexpected request" method)
   (json-rpc.messages/standard-error-response :json-rpc/method-not-found {:method method}))
 
-(defmethod handle-notification :default [method _params]
+(defmethod handle-notification :default [method _context _params]
   (logger/debug "received unexpected notification" method))
 
 (defrecord Server [parallelism
@@ -51,13 +51,13 @@
                    pending-requests*
                    on-shutdown]
   protocols.endpoint/IEndpoint
-  (start [this]
+  (start [this context]
     (async/pipeline-blocking parallelism
                              sender
                              ;; TODO: return error until initialize request is received? https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification/#initialize
                              ;; TODO: coerce here? Or leave that to servers?
                              ;; `keep` means we do not reply to responses and notifications
-                             (keep #(receive-message this %))
+                             (keep #(receive-message this context %))
                              receiver)
     ;; invokers should deref the return of `start`, so the server stays alive
     ;; until it is shut down
@@ -89,15 +89,15 @@
                              resp
                              (:result resp))))
       (logger/debug "received response for unmatched request:" resp)))
-  (receive-request [_this {:keys [id method params] :as req}]
+  (receive-request [_this context {:keys [id method params] :as req}]
     (when trace? (trace-received-request req))
-    (when-let [result (handle-request method params)]
+    (when-let [result (handle-request method context params)]
       (let [resp (json-rpc.messages/response id result)]
         (when trace? (trace-sending-response resp))
         resp)))
-  (receive-notification [_this {:keys [method params] :as notif}]
+  (receive-notification [_this context {:keys [method params] :as notif}]
     (when trace? (trace-received-notification notif))
-    (handle-notification method params)))
+    (handle-notification method context params)))
 
 (defn chan-server [{:keys [sender receiver parallelism trace?]
                      :or {parallelism 4, trace? false}}]
@@ -127,7 +127,7 @@
                           :method "foo"
                           :params {}})
     (prn "sent message to receiver")
-    (let [started-server (protocols.endpoint/start server)]
+    (let [started-server (protocols.endpoint/start server nil)]
       (prn "gettting message from sender")
       (async/<!! sender)
       (prn "got message from sender")
