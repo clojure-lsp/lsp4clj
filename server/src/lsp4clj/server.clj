@@ -10,33 +10,39 @@
   (if-let [{:keys [id method] :as json} message]
     (try
       (cond
+        ;; TODO: if server generates nil response, convert to valid, empty response
         (and id method) (protocols.endpoint/receive-request server json)
-        id              (protocols.endpoint/receive-response server json)
-        :else           (protocols.endpoint/receive-notification server json))
+        id              (do (protocols.endpoint/receive-response server json)
+                            ;; Ensure server doesn't respond to responses
+                            nil)
+        :else           (do (protocols.endpoint/receive-notification server json)
+                            ;; Ensure server doesn't respond to notifications
+                            nil))
       (catch Throwable e
         (logger/debug e "listener closed: exception receiving")))
     (logger/debug "listener closed: client closed")))
 
 ;; TODO: Does LSP have a standard format for traces?
-;; TODO: Are you supposed to trace before or after sending?
-(defn ^:private trace-sending-request [req] (logger/debug "trace - sending request" req))
-(defn ^:private trace-sending-notification [notif] (logger/debug "trace - sending notification" notif))
-(defn ^:private trace-sending-response [resp] (logger/debug "trace - sending response" resp))
-(defn ^:private trace-received-response [resp] (logger/debug "trace - received response" resp))
-(defn ^:private trace-received-request [req] (logger/debug "trace - received request" req))
+;; TODO: Send traces elsewhere?
 (defn ^:private trace-received-notification [notif] (logger/debug "trace - received notification" notif))
+(defn ^:private trace-received-request [req] (logger/debug "trace - received request" req))
+(defn ^:private trace-received-response [resp] (logger/debug "trace - received response" resp))
+;; TODO: Are you supposed to trace before or after sending?
+(defn ^:private trace-sending-notification [notif] (logger/debug "trace - sending notification" notif))
+(defn ^:private trace-sending-request [req] (logger/debug "trace - sending request" req))
+(defn ^:private trace-sending-response [resp] (logger/debug "trace - sending response" resp))
 
 (defmulti handle-request (fn [method _params] method))
 (defmulti handle-notification (fn [method _params] method))
 
-(defmethod handle-request :default [method params]
-  (logger/debug "received unexpected request" method params)
+(defmethod handle-request :default [method _params]
+  (logger/debug "received unexpected request" method)
   {:error {:code -32601
            :message "Method not found"
            :data {:method method}}})
 
-(defmethod handle-notification :default [method params]
-  (logger/debug "received unexpected notification" method params))
+(defmethod handle-notification :default [method _params]
+  (logger/debug "received unexpected notification" method))
 
 (defrecord Server [parallelism
                    trace?
@@ -51,7 +57,8 @@
                              sender
                              ;; TODO: return error until initialize request is received? https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification/#initialize
                              ;; TODO: coerce here? Or leave that to servers?
-                             (map #(receive-message this %))
+                             ;; `keep` means we do not reply to responses and notifications
+                             (keep #(receive-message this %))
                              receiver)
     ;; invokers should deref the return of `start`, so the server stays alive
     ;; until it is shut down
@@ -74,7 +81,7 @@
   (send-notification [_this method body]
     (let [notif (json-rpc/json-rpc-message method body)]
       (when trace? (trace-sending-notification notif))
-      (async/>!! sender notif)))
+      (async/put! sender notif)))
   (receive-response [_this {:keys [id] :as resp}]
     (if-let [request (get @pending-requests* id)]
       (do (when trace? (trace-received-response resp))
@@ -94,7 +101,7 @@
                     :id id
                     :result resp})]
         (when trace? (trace-sending-response resp))
-        (async/>!! sender resp))))
+        resp)))
   (receive-notification [_this {:keys [method params] :as notif}]
     (when trace? (trace-received-notification notif))
     (handle-notification method params)))
@@ -113,8 +120,8 @@
 #_{:clj-kondo/ignore [:clojure-lsp/unused-public-var]}
 (defn stdio-server [{:keys [in out] :as opts}]
   (chan-server (assoc opts
-                      :receiver (json-rpc/buffered-reader->receiver-chan in)
-                      :sender (json-rpc/buffered-writer->sender-chan out))))
+                      :receiver (json-rpc/input-stream->receiver-chan in)
+                      :sender (json-rpc/output-stream->sender-chan out))))
 (comment
   (let [receiver (async/chan 1)
         sender (async/chan 1)

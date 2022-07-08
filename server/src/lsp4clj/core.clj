@@ -1,6 +1,6 @@
 (ns lsp4clj.core
   (:require
-   [clojure.core.async :refer [thread]]
+   [clojure.core.async :as async]
    [lsp4clj.coercer :as coercer]
    [lsp4clj.liveness-probe :as liveness-probe]
    [lsp4clj.protocols.feature-handler :as feature-handler]
@@ -377,7 +377,7 @@
   (let [buffer-size 1024
         os (java.io.PipedOutputStream.)
         is (java.io.PipedInputStream. os)]
-    (thread
+    (async/thread
       (try
         (let [buffer (byte-array buffer-size)]
           (loop [chs (.read system-in buffer 0 buffer-size)]
@@ -394,7 +394,7 @@
   (let [buffer-size 1024
         is (java.io.PipedInputStream.)
         os (java.io.PipedOutputStream. is)]
-    (thread
+    (async/thread
       (try
         (let [buffer (byte-array buffer-size)]
           (loop [chs (.read is buffer 0 buffer-size)]
