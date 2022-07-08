@@ -1,16 +1,13 @@
 (ns lsp4clj.core
   (:require
-   [clojure.core.async :refer [<! go-loop thread timeout]]
-   [clojure.java.shell :as shell]
-   [clojure.string :as string]
+   [clojure.core.async :refer [thread]]
    [lsp4clj.coercer :as coercer]
+   [lsp4clj.liveness-probe :as liveness-probe]
    [lsp4clj.protocols.feature-handler :as feature-handler]
    [lsp4clj.protocols.logger :as logger]
    [lsp4clj.protocols.producer :as producer])
   (:import
-   (java.util.concurrent
-     CompletableFuture
-     CompletionException)
+   (java.util.concurrent CompletableFuture CompletionException)
    (java.util.function Supplier)
    (lsp4clj.protocols.feature_handler ILSPFeatureHandler)
    (org.eclipse.lsp4j
@@ -322,37 +319,6 @@
            .getCapabilities
            (coercer/conform-or-log ::coercer/client-capabilities)))
 
-(defn ^:private windows-process-alive?
-  [pid]
-  (let [{:keys [out]} (shell/sh "tasklist" "/fi" (format "\"pid eq %s\"" pid))]
-    (string/includes? out (str pid))))
-
-(defn ^:private unix-process-alive?
-  [pid]
-  (let [{:keys [exit]} (shell/sh "kill" "-0" (str pid))]
-    (zero? exit)))
-
-(defn ^:private process-alive?
-  [pid]
-  (try
-    (if (.contains (System/getProperty "os.name") "Windows")
-      (windows-process-alive? pid)
-      (unix-process-alive? pid))
-    (catch Exception e
-      (logger/warn server-logger-tag "Checking if process is alive failed." e)
-      ;; Return true since the check failed. Assume the process is alive.
-      true)))
-
-(defn ^:private start-parent-process-liveness-probe!
-  [ppid server]
-  (go-loop []
-    (<! (timeout 5000))
-    (if (process-alive? ppid)
-      (recur)
-      (do
-        (logger/info server-logger-tag (str "Parent process " ppid " is not running - exiting server"))
-        (.exit ^LanguageServer server)))))
-
 #_{:clj-kondo/ignore [:clojure-lsp/unused-public-var]}
 (deftype LSPServer
          [^ILSPFeatureHandler feature-handler
@@ -375,7 +341,7 @@
                                       client-settings)
                                   (some-> (.getWorkDoneToken params) .get str))
       (when-let [parent-process-id (.getProcessId params)]
-        (start-parent-process-liveness-probe! parent-process-id this))
+        (liveness-probe/start! parent-process-id #(.exit ^LanguageServer this)))
       (let [capabilities (capabilities-fn db)]
         (CompletableFuture/completedFuture
           (InitializeResult. (coercer/conform-or-log ::coercer/server-capabilities capabilities))))))
