@@ -11,7 +11,6 @@
   (if-let [{:keys [id method] :as json} message]
     (try
       (cond
-        ;; TODO: if server generates nil response, convert to valid, empty response
         (and id method) (protocols.endpoint/receive-request server context json)
         id              (do (protocols.endpoint/receive-response server json)
                             ;; Ensure server doesn't respond to responses
@@ -91,10 +90,10 @@
       (logger/debug "received response for unmatched request:" resp)))
   (receive-request [_this context {:keys [id method params] :as req}]
     (when trace? (trace-received-request req))
-    (when-let [result (handle-request method context params)]
-      (let [resp (json-rpc.messages/response id result)]
-        (when trace? (trace-sending-response resp))
-        resp)))
+    (let [result (handle-request method context params)
+          resp (json-rpc.messages/response id result)]
+      (when trace? (trace-sending-response resp))
+      resp))
   (receive-notification [_this context {:keys [method params] :as notif}]
     (when trace? (trace-received-notification notif))
     (handle-notification method context params)))
