@@ -2,6 +2,7 @@
   (:require
    [clojure.core.async :as async]
    [lsp4clj.json-rpc :as json-rpc]
+   [lsp4clj.json-rpc.messages :as json-rpc.messages]
    [lsp4clj.protocols.endpoint :as protocols.endpoint]
    [lsp4clj.protocols.logger :as logger]))
 
@@ -37,9 +38,7 @@
 
 (defmethod handle-request :default [method _params]
   (logger/debug "received unexpected request" method)
-  {:error {:code -32601
-           :message "Method not found"
-           :data {:method method}}})
+  (json-rpc.messages/standard-error-response :json-rpc/method-not-found {:method method}))
 
 (defmethod handle-notification :default [method _params]
   (logger/debug "received unexpected notification" method))
@@ -70,7 +69,7 @@
     (async/<!! sender))
   (send-request [_this method body]
     (let [id (swap! request-id* inc)
-          req (json-rpc/json-rpc-message id method body)
+          req (json-rpc.messages/request id method body)
           p (promise)]
       (when trace? (trace-sending-request req))
       ;; Important: record request before sending it, so it is sure to be
@@ -79,7 +78,7 @@
       (async/>!! sender req)
       p))
   (send-notification [_this method body]
-    (let [notif (json-rpc/json-rpc-message method body)]
+    (let [notif (json-rpc.messages/request method body)]
       (when trace? (trace-sending-notification notif))
       (async/put! sender notif)))
   (receive-response [_this {:keys [id] :as resp}]
@@ -92,14 +91,8 @@
       (logger/debug "received response for unmatched request:" resp)))
   (receive-request [_this {:keys [id method params] :as req}]
     (when trace? (trace-received-request req))
-    (when-let [resp (handle-request method params)]
-      (let [resp (if-let [error (:error resp)]
-                   {:jsonrpc "2.0"
-                    :id id
-                    :error error}
-                   {:jsonrpc "2.0"
-                    :id id
-                    :result resp})]
+    (when-let [result (handle-request method params)]
+      (let [resp (json-rpc.messages/response id result)]
         (when trace? (trace-sending-response resp))
         resp)))
   (receive-notification [_this {:keys [method params] :as notif}]

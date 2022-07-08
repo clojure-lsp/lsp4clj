@@ -96,11 +96,3 @@
           ;; channel closed; also close output
           (.close output))))
     messages))
-
-(defn json-rpc-message
-  ([method params] ;; notification
-   {:jsonrpc "2.0"
-    :method method
-    :params params})
-  ([id method params] ;; request
-   (assoc (json-rpc-message method params) :id id)))
