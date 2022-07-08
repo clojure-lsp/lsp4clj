@@ -1,5 +1,8 @@
 {:deps {org.clojure/clojure {:mvn/version "1.11.1"}
         org.clojure/core.async {:mvn/version "1.5.648"}
+        camel-snake-kebab/camel-snake-kebab {:mvn/version "0.4.3"}
+        cheshire/cheshire {:mvn/version "5.11.0"}
+
         org.eclipse.xtend/org.eclipse.xtend.lib {:mvn/version "2.27.0"}
         org.eclipse.lsp4j/org.eclipse.lsp4j {:mvn/version "0.14.0"  :exclusions [org.eclipse.xtend/org.eclipse.xtend.lib
                                                                                  com.google.code.gson/gson]}
