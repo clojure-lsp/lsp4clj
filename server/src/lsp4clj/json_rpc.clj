@@ -44,7 +44,7 @@
 
 (defn ^:private write-message [msg]
   (let [content (json/generate-string (cske/transform-keys csk/->camelCaseString msg))]
-    (print (str "Content-Length: " (.length content) "\r\n"
+    (print (str "Content-Length: " (count (.getBytes content "utf-8")) "\r\n"
                 "\r\n"
                 content))
     (flush)))
