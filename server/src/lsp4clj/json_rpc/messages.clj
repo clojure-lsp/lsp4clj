@@ -12,10 +12,10 @@
        (assoc :id id))))
 
 (defn response
-  [id {:keys [error] :as result}]
+  [id result]
   (let [response (assoc base-message :id id)]
-    (if error
-      (assoc response :error error)
+    (if (and (map? result) (:error result))
+      (assoc response :error (:error result))
       (assoc response :result result))))
 
 (defn error-response [code message data]
