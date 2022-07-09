@@ -37,7 +37,7 @@
 
 (defmethod handle-request :default [method _context _params]
   (logger/debug "received unexpected request" method)
-  (json-rpc.messages/standard-error-response :json-rpc/method-not-found {:method method}))
+  (json-rpc.messages/standard-error-response :method-not-found {:method method}))
 
 (defmethod handle-notification :default [method _context _params]
   (logger/debug "received unexpected notification" method))
