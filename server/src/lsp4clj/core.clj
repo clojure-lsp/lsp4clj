@@ -76,7 +76,7 @@
         ([^bytes b])
         ([^bytes b, off, len])))))
 
-(defmacro capturing-stdout
+(defmacro discarding-stdout
   "Evaluates body in a context in which writes to *out* are discarded."
   [& body]
   `(binding [*out* null-output-stream-writer]
@@ -111,16 +111,16 @@
          [^ILSPFeatureHandler handler]
   TextDocumentService
   (^void didOpen [_ ^DidOpenTextDocumentParams params]
-    (capturing-stdout
+    (discarding-stdout
       (handle-notification params feature-handler/did-open handler)))
 
   (^void didChange [_ ^DidChangeTextDocumentParams params]
-    (capturing-stdout
+    (discarding-stdout
       (handle-notification params feature-handler/did-change handler)))
 
   (^void didSave [_ ^DidSaveTextDocumentParams params]
     (future
-      (capturing-stdout
+      (discarding-stdout
         (try
           (handle-notification params feature-handler/did-save handler)
           (catch Throwable e
@@ -130,52 +130,52 @@
 
   (^void didClose [_ ^DidCloseTextDocumentParams params]
     (in-completable-future
-      (capturing-stdout
+      (discarding-stdout
         (handle-notification params feature-handler/did-close handler))))
 
   (^CompletableFuture references [_ ^ReferenceParams params]
     (in-completable-future
-      (capturing-stdout
+      (discarding-stdout
         (handle-request params feature-handler/references handler ::coercer/locations))))
 
   (^CompletableFuture completion [_ ^CompletionParams params]
     (in-completable-future
-      (capturing-stdout
+      (discarding-stdout
         (handle-request params feature-handler/completion handler ::coercer/completion-items))))
 
   (^CompletableFuture resolveCompletionItem [_ ^CompletionItem item]
     (in-completable-future
-      (capturing-stdout
+      (discarding-stdout
         (handle-request item feature-handler/completion-resolve-item handler ::coercer/completion-item))))
 
   (^CompletableFuture prepareRename [_ ^PrepareRenameParams params]
     (in-completable-future
-      (capturing-stdout
+      (discarding-stdout
         (handle-request params feature-handler/prepare-rename handler ::coercer/prepare-rename-or-error))))
 
   (^CompletableFuture rename [_ ^RenameParams params]
     (in-completable-future
-      (capturing-stdout
+      (discarding-stdout
         (handle-request params feature-handler/rename handler ::coercer/workspace-edit-or-error))))
 
   (^CompletableFuture hover [_ ^HoverParams params]
     (in-completable-future
-      (capturing-stdout
+      (discarding-stdout
         (handle-request params feature-handler/hover handler ::coercer/hover))))
 
   (^CompletableFuture signatureHelp [_ ^SignatureHelpParams params]
     (in-completable-future
-      (capturing-stdout
+      (discarding-stdout
         (handle-request params feature-handler/signature-help handler ::coercer/signature-help))))
 
   (^CompletableFuture formatting [_ ^DocumentFormattingParams params]
     (in-completable-future
-      (capturing-stdout
+      (discarding-stdout
         (handle-request params feature-handler/formatting handler ::coercer/edits))))
 
   (^CompletableFuture rangeFormatting [_this ^DocumentRangeFormattingParams params]
     (CompletableFuture/completedFuture
-      (capturing-stdout
+      (discarding-stdout
         (when (compare-and-set! formatting false true)
           (try
             (handle-request params feature-handler/range-formatting handler ::coercer/edits)
@@ -186,72 +186,72 @@
 
   (^CompletableFuture codeAction [_ ^CodeActionParams params]
     (in-completable-future
-      (capturing-stdout
+      (discarding-stdout
         (handle-request params feature-handler/code-actions handler ::coercer/code-actions))))
 
   (^CompletableFuture codeLens [_ ^CodeLensParams params]
     (in-completable-future
-      (capturing-stdout
+      (discarding-stdout
         (handle-request params feature-handler/code-lens handler ::coercer/code-lenses))))
 
   (^CompletableFuture resolveCodeLens [_ ^CodeLens params]
     (in-completable-future
-      (capturing-stdout
+      (discarding-stdout
         (handle-request params feature-handler/code-lens-resolve handler ::coercer/code-lens))))
 
   (^CompletableFuture definition [_ ^DefinitionParams params]
     (in-completable-future
-      (capturing-stdout
+      (discarding-stdout
         (handle-request params feature-handler/definition handler ::coercer/location))))
 
   (^CompletableFuture declaration [_ ^DeclarationParams params]
     (in-completable-future
-      (capturing-stdout
+      (discarding-stdout
         (handle-request params feature-handler/declaration handler ::coercer/location))))
 
   (^CompletableFuture implementation [_ ^ImplementationParams params]
     (in-completable-future
-      (capturing-stdout
+      (discarding-stdout
         (handle-request params feature-handler/implementation handler ::coercer/locations))))
 
   (^CompletableFuture documentSymbol [_ ^DocumentSymbolParams params]
     (in-completable-future
-      (capturing-stdout
+      (discarding-stdout
         (handle-request params feature-handler/document-symbol handler ::coercer/document-symbols))))
 
   (^CompletableFuture documentHighlight [_ ^DocumentHighlightParams params]
     (in-completable-future
-      (capturing-stdout
+      (discarding-stdout
         (handle-request params feature-handler/document-highlight handler ::coercer/document-highlights))))
 
   (^CompletableFuture semanticTokensFull [_ ^SemanticTokensParams params]
     (in-completable-future
-      (capturing-stdout
+      (discarding-stdout
         (handle-request params feature-handler/semantic-tokens-full handler ::coercer/semantic-tokens))))
 
   (^CompletableFuture semanticTokensRange [_ ^SemanticTokensRangeParams params]
     (in-completable-future
-      (capturing-stdout
+      (discarding-stdout
         (handle-request params feature-handler/semantic-tokens-range handler ::coercer/semantic-tokens))))
 
   (^CompletableFuture prepareCallHierarchy [_ ^CallHierarchyPrepareParams params]
     (in-completable-future
-      (capturing-stdout
+      (discarding-stdout
         (handle-request params feature-handler/prepare-call-hierarchy handler ::coercer/call-hierarchy-items))))
 
   (^CompletableFuture callHierarchyIncomingCalls [_ ^CallHierarchyIncomingCallsParams params]
     (in-completable-future
-      (capturing-stdout
+      (discarding-stdout
         (handle-request params feature-handler/call-hierarchy-incoming handler ::coercer/call-hierarchy-incoming-calls))))
 
   (^CompletableFuture callHierarchyOutgoingCalls [_ ^CallHierarchyOutgoingCallsParams params]
     (in-completable-future
-      (capturing-stdout
+      (discarding-stdout
         (handle-request params feature-handler/call-hierarchy-outgoing handler ::coercer/call-hierarchy-outgoing-calls))))
 
   (^CompletableFuture linkedEditingRange [_ ^LinkedEditingRangeParams params]
     (in-completable-future
-      (capturing-stdout
+      (discarding-stdout
         (handle-request params feature-handler/linked-editing-ranges handler ::coercer/linked-editing-ranges-or-error)))))
 
 (deftype LSPWorkspaceService
@@ -259,7 +259,7 @@
   WorkspaceService
   (^CompletableFuture executeCommand [_ ^ExecuteCommandParams params]
     (future
-      (capturing-stdout
+      (discarding-stdout
         (try
           (handle-notification params feature-handler/execute-command handler)
           (catch Throwable e
@@ -268,12 +268,12 @@
     (CompletableFuture/completedFuture 0))
 
   (^void didChangeConfiguration [_ ^DidChangeConfigurationParams params]
-    (capturing-stdout
+    (discarding-stdout
       (logger/warn (coercer/java->clj params))))
 
   (^void didChangeWatchedFiles [_ ^DidChangeWatchedFilesParams params]
     (in-completable-future
-      (capturing-stdout
+      (discarding-stdout
         (handle-notification params feature-handler/did-change-watched-files handler))))
 
   ;; TODO implement it, but should we do anything?
@@ -283,37 +283,37 @@
 
   (^CompletableFuture symbol [_ ^WorkspaceSymbolParams params]
     (in-completable-future
-      (capturing-stdout
+      (discarding-stdout
         (handle-request params feature-handler/workspace-symbols handler ::coercer/workspace-symbols))))
 
   (^CompletableFuture willCreateFiles [_ ^CreateFilesParams params]
     (in-completable-future
-      (capturing-stdout
+      (discarding-stdout
         (handle-request params feature-handler/will-create-files handler ::coercer/workspace-edit))))
 
   (^void didCreateFiles [_ ^CreateFilesParams params]
     (in-completable-future
-      (capturing-stdout
+      (discarding-stdout
         (handle-notification params feature-handler/did-create-files handler))))
 
   (^CompletableFuture willRenameFiles [_ ^RenameFilesParams params]
     (in-completable-future
-      (capturing-stdout
+      (discarding-stdout
         (handle-request params feature-handler/will-rename-files handler ::coercer/workspace-edit))))
 
   (^void didRenameFiles [_ ^RenameFilesParams params]
     (in-completable-future
-      (capturing-stdout
+      (discarding-stdout
         (handle-notification params feature-handler/did-rename-files handler))))
 
   (^CompletableFuture willDeleteFiles [_ ^DeleteFilesParams params]
     (in-completable-future
-      (capturing-stdout
+      (discarding-stdout
         (handle-request params feature-handler/will-delete-files handler ::coercer/workspace-edit))))
 
   (^void didDeleteFiles [_ ^DeleteFilesParams params]
     (in-completable-future
-      (capturing-stdout
+      (discarding-stdout
         (handle-notification params feature-handler/did-delete-files handler)))))
 
 (defn client-capabilities
@@ -364,7 +364,7 @@
           files]
   LanguageServer
   (^CompletableFuture initialize [this ^InitializeParams params]
-    (capturing-stdout
+    (discarding-stdout
       (logger/info server-logger-tag "Initializing...")
       (feature-handler/initialize feature-handler
                                   (.getRootUri params)
@@ -381,7 +381,7 @@
           (InitializeResult. (coercer/conform-or-log ::coercer/server-capabilities capabilities))))))
 
   (^void initialized [_ ^InitializedParams _params]
-    (capturing-stdout
+    (discarding-stdout
       (logger/info server-logger-tag "Initialized!")
       (producer/register-capability
         @producer*
@@ -391,13 +391,13 @@
                             [(FileSystemWatcher. files)]))]))))
 
   (^CompletableFuture shutdown [_]
-    (capturing-stdout
+    (discarding-stdout
       (logger/info server-logger-tag "Shutting down")
       (reset! db initial-db)
       (CompletableFuture/completedFuture
         nil)))
   (exit [_]
-    (capturing-stdout
+    (discarding-stdout
       (logger/info server-logger-tag "Exiting...")
       (shutdown-agents)
       (System/exit 0)))
@@ -445,26 +445,26 @@
   producer/ILSPProducer
 
   (publish-diagnostic [_this diagnostic]
-    (capturing-stdout
+    (discarding-stdout
       (->> diagnostic
            (coercer/conform-or-log ::coercer/publish-diagnostics-params)
            (.publishDiagnostics client))))
 
   (refresh-code-lens [_this]
-    (capturing-stdout
+    (discarding-stdout
       (when-let [code-lens-capability ^CodeLensWorkspaceCapabilities (get-in @db [:client-capabilities :workspace :code-lens])]
         (when (.getRefreshSupport code-lens-capability)
           (.refreshCodeLenses client)))))
 
   (publish-workspace-edit [_this edit]
-    (capturing-stdout
+    (discarding-stdout
       (->> edit
            (coercer/conform-or-log ::coercer/workspace-edit-or-error)
            ApplyWorkspaceEditParams.
            (.applyEdit client))))
 
   (show-document-request [_this document-request]
-    (capturing-stdout
+    (discarding-stdout
       (logger/info server-logger-tag "Requesting to show on editor the document" document-request)
       (when (.getShowDocument ^WindowClientCapabilities (get-in @db [:client-capabilities :window]))
         (->> document-request
@@ -472,7 +472,7 @@
              (.showDocument client)))))
 
   (publish-progress [_this percentage message progress-token]
-    (capturing-stdout
+    (discarding-stdout
       (let [progress (case (int percentage)
                        0 {:kind :begin
                           :title message
@@ -489,7 +489,7 @@
              (.notifyProgress client)))))
 
   (show-message-request [_this message type actions]
-    (capturing-stdout
+    (discarding-stdout
       (let [result (->> {:type type
                          :message message
                          :actions actions}
@@ -499,7 +499,7 @@
         (.getTitle ^MessageActionItem result))))
 
   (show-message [_this message type extra]
-    (capturing-stdout
+    (discarding-stdout
       (let [message-content {:message message
                              :type type
                              :extra extra}]
@@ -509,7 +509,7 @@
              (.showMessage client)))))
 
   (register-capability [_this capability]
-    (capturing-stdout
+    (discarding-stdout
       (.registerCapability
         client
         capability))))
