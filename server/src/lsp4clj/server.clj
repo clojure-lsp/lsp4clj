@@ -10,14 +10,23 @@
   (deref-or-cancel [this timeout-ms timeout-val]))
 
 (defn request
-  "Returns a 'request' object, representing a JSON-RPC request to a remote
-  endpoint. Deref the request (optionally with a timeout) to get the response.
-  Call `future-cancel` on it to send a '$/cancelRequest' notification, when
-  possible. Also permits `lsp4clj.server/deref-or-cancel` which has the same
-  signature as `deref` with a timeout, but will cancel the request if the
-  timeout is reached. Otherwise conforms to the same interface as `future`,
-  which means you can use it with `realized?`, `future-done?` and
-  `future-cancelled?`."
+  "Returns an object representing a JSON-RPC request to a remote endpoint.
+
+  Most of the time, you should call `lsp4clj.server/deref-or-cancel` on the
+  object. This has the same signature as `clojure.core/deref` with a timeout. If
+  the client produces a response, will return it, but if the timeout is reached
+  will cancel the request by sending a `$/cancelRequest` notification to the
+  client.
+
+  Otherwise, the object presents the same interface as `future`. Responds to
+  `future-cancel` (which sends `$/cancelRequest`), `realized?`, `future-done?`
+  and `future-cancelled?`.
+
+  If the request is cancelled, future invokations of `deref` will return
+  `:lsp4clj.server/cancelled`.
+
+  Sends `$/cancelRequest` only once, though it is permitted to call
+  `lsp4clj.server/deref-or-cancel` and `future-cancel` multiple times."
   [p id server]
   (let [cancelled? (atom false)]
     (reify
@@ -71,8 +80,10 @@
                             ;; Ensure server doesn't respond to notifications
                             nil))
       (catch Throwable e
-        (logger/debug e "listener closed: exception receiving")))
-    (logger/debug "listener closed: client closed")))
+        ;; TODO: if this was a request, send a generic -32603 Internal error
+        (logger/debug e "exception receiving")))
+    ;; TODO: what does a nil message signify? What should we do with it?
+    (logger/debug "client closed? or json parse error?")))
 
 ;; TODO: Does LSP have a standard format for traces?
 ;; TODO: Send traces elsewhere?

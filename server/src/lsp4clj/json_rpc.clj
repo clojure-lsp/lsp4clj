@@ -40,6 +40,10 @@
   (let [content-length (parse-long (get headers "Content-Length"))
         charset-s (parse-charset (get headers "Content-Type"))
         content (read-n-chars input content-length charset-s)]
+    ;; TODO: figure out how to signal errors to lsp4clj.server
+    ;; TODO: catch exceptions and return -32700 Parse error
+    ;; TODO: validate message conforms to JSON-RPC request object
+    ;; (jsonrpc/method/id/params) and return -32600 Invalid Request if not.
     (json/parse-string content csk/->kebab-case-keyword)))
 
 (defn ^:private write-message [msg]
