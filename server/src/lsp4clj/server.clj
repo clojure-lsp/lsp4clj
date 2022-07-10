@@ -6,6 +6,58 @@
    [lsp4clj.protocols.endpoint :as protocols.endpoint]
    [lsp4clj.protocols.logger :as logger]))
 
+(defprotocol IBlockingDerefOrCancel
+  (deref-or-cancel [this timeout-ms timeout-val]))
+
+(defn request
+  "Returns a 'request' object, representing a JSON-RPC request to a remote
+  endpoint. Deref the request (optionally with a timeout) to get the response.
+  Call `future-cancel` on it to send a '$/cancelRequest' notification, when
+  possible. Also permits `lsp4clj.server/deref-or-cancel` which has the same
+  signature as `deref` with a timeout, but will cancel the request if the
+  timeout is reached. Otherwise conforms to the same interface as `future`,
+  which means you can use it with `realized?`, `future-done?` and
+  `future-cancelled?`."
+  [p id server]
+  (let [cancelled? (atom false)]
+    (reify
+      clojure.lang.IDeref
+      (deref [_] (deref p))
+      clojure.lang.IBlockingDeref
+      (deref [_ timeout-ms timeout-val]
+        (deref p timeout-ms timeout-val))
+      IBlockingDerefOrCancel
+      (deref-or-cancel [this timeout-ms timeout-val]
+        (let [result (deref this timeout-ms ::timeout)]
+          (if (= ::timeout result)
+            (do (future-cancel this)
+                timeout-val)
+            result)))
+      clojure.lang.IPending
+      (isRealized [_] (realized? p))
+      java.util.concurrent.Future
+      (get [this]
+        (let [result (deref this)]
+          (if (= ::cancelled result)
+            (throw (java.util.concurrent.CancellationException.))
+            result)))
+      (get [this timeout unit]
+        (let [result (deref this (.toMillis unit timeout) ::timeout)]
+          (case result
+            ::cancelled (throw (java.util.concurrent.CancellationException.))
+            ::timeout (throw (java.util.concurrent.TimeoutException.))
+            result)))
+      (isCancelled [_] @cancelled?)
+      (isDone [this] (or (.isRealized this) (.isCancelled this)))
+      (cancel [this _interrupt?]
+        (if (.isDone this)
+          false
+          (do
+            (protocols.endpoint/send-notification server "$/cancelRequest" {:id id})
+            (deliver p ::cancelled)
+            (reset! cancelled? true)
+            true))))))
+
 (defn ^:private receive-message
   [server context message]
   (if-let [{:keys [id method] :as json} message]
@@ -66,7 +118,7 @@
     (deliver join :done))
   (exit [_this] ;; wait for shutdown of client to propagate to receiver
     (async/<!! sender))
-  (send-request [_this method body]
+  (send-request [this method body]
     (let [id (swap! request-id* inc)
           req (json-rpc.messages/request id method body)
           p (promise)]
@@ -75,7 +127,7 @@
       ;; available during receive-response.
       (swap! pending-requests* assoc id p)
       (async/>!! sender req)
-      p))
+      (request p id this)))
   (send-notification [_this method body]
     (let [notif (json-rpc.messages/request method body)]
       (when trace? (trace-sending-notification method notif))
@@ -126,7 +178,7 @@
                           :method "foo"
                           :params {}})
     (prn "sent message to receiver")
-    (let [started-server (protocols.endpoint/start server nil)]
+    (let [join (protocols.endpoint/start server nil)]
       (prn "gettting message from sender")
       (async/<!! sender)
       (prn "got message from sender")
@@ -137,6 +189,107 @@
       (prn "sent message to receiver")
       (protocols.endpoint/shutdown server)
       (protocols.endpoint/exit server)
-      @started-server))
+      @join))
+
+  ;; client replies
+  (let [receiver (async/chan 1)
+        sender (async/chan 1)
+        server (chan-server {:sender sender
+                             :receiver receiver
+                             :parallelism 1
+                             :trace? true})
+        join (protocols.endpoint/start server nil)
+        req (protocols.endpoint/send-request server "req" {:body "foo"})
+        client-rcvd-msg (async/<!! sender)]
+    (prn :client-received-request client-rcvd-msg)
+    (async/put! receiver {:id (:id client-rcvd-msg)
+                          :result {:processed true}})
+    (prn :server-received-response @req)
+    (protocols.endpoint/shutdown server)
+    (protocols.endpoint/exit server)
+    @join)
+
+  ;; client doesn't reply; server cancels
+  (let [receiver (async/chan 1)
+        sender (async/chan 1)
+        server (chan-server {:sender sender
+                             :receiver receiver
+                             :parallelism 1
+                             :trace? true})
+        join (protocols.endpoint/start server nil)
+        req (protocols.endpoint/send-request server "req" {:body "foo"})]
+    (prn :client-received (async/<!! sender))
+    (prn :server-received (deref-or-cancel req 1000 :test-timeout))
+    (prn :client-received (async/<!! sender))
+    (protocols.endpoint/shutdown server)
+    (protocols.endpoint/exit server)
+    @join)
+
+  ; client replies; server cancels (but no $/cancelRequest)
+  (let [receiver (async/chan 1)
+        sender (async/chan 1)
+        server (chan-server {:sender sender
+                             :receiver receiver
+                             :parallelism 1
+                             :trace? true})
+        join (protocols.endpoint/start server nil)
+        req (protocols.endpoint/send-request server "req" {:body "foo"})
+        client-rcvd-msg (async/<!! sender)]
+    (prn :client-received client-rcvd-msg)
+    (async/put! receiver {:id (:id client-rcvd-msg)
+                          :result {:processed true}})
+    (prn :server-received (deref-or-cancel req 1000 :test-timeout))
+    (prn :client-received (let [timeout (async/timeout 1000)
+                                [result ch] (async/alts!! [sender timeout])]
+                            (if (= ch timeout)
+                              :nothing
+                              result)))
+    (prn :server-cancel (future-cancel req))
+    (protocols.endpoint/shutdown server)
+    (protocols.endpoint/exit server)
+    @join)
+
+  ;; server cancels
+  (let [receiver (async/chan 1)
+        sender (async/chan 1)
+        server (chan-server {:sender sender
+                             :receiver receiver
+                             :parallelism 1
+                             :trace? true})
+        join (protocols.endpoint/start server nil)
+        req (protocols.endpoint/send-request server "req" {:body "foo"})]
+    (prn :server-cancel (future-cancel req))
+    (prn :server-cancel (future-cancel req))
+    (prn :client-received (async/<!! sender))
+    (prn :client-received (async/<!! sender))
+    (protocols.endpoint/shutdown server)
+    (protocols.endpoint/exit server)
+    @join)
+
+  (let [receiver (async/chan 1)
+        sender (async/chan 1)
+        server (chan-server {:sender sender
+                             :receiver receiver
+                             :parallelism 1
+                             :trace? true})
+        p (promise)
+        req (request p 1 server)]
+    #_(deliver p :done)
+    #_(future-cancel req)
+    (prn (realized? req))
+    (prn (future-done? req))
+    (prn (future-cancelled? req)))
+
+  (let [receiver (async/chan 1)
+        sender (async/chan 1)
+        server (chan-server {:sender sender
+                             :receiver receiver
+                             :parallelism 1
+                             :trace? true})
+        p (promise)
+        req (request p 1 server)]
+    #_(deliver p :done)
+    #_(future-cancel req)
+    (prn (.get req 1 java.util.concurrent.TimeUnit/SECONDS)))
 
   #_())
