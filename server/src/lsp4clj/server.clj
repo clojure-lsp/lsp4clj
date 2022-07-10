@@ -48,7 +48,7 @@
                    sender
                    request-id*
                    pending-requests*
-                   on-shutdown]
+                   join]
   protocols.endpoint/IEndpoint
   (start [this context]
     (async/pipeline-blocking parallelism
@@ -60,10 +60,10 @@
                              receiver)
     ;; invokers should deref the return of `start`, so the server stays alive
     ;; until it is shut down
-    on-shutdown)
+    join)
   (shutdown [_this]
     (async/close! receiver)
-    (deliver on-shutdown :done))
+    (deliver join :done))
   (exit [_this] ;; wait for shutdown of client to propagate to receiver
     (async/<!! sender))
   (send-request [_this method body]
@@ -99,7 +99,7 @@
     (handle-notification method context params)))
 
 (defn chan-server [{:keys [sender receiver parallelism trace?]
-                     :or {parallelism 4, trace? false}}]
+                    :or {parallelism 4, trace? false}}]
   (map->Server
     {:parallelism parallelism
      :trace? trace?
@@ -107,7 +107,7 @@
      :receiver receiver
      :request-id* (atom 0)
      :pending-requests* (atom {})
-     :on-shutdown (promise)}))
+     :join (promise)}))
 
 #_{:clj-kondo/ignore [:clojure-lsp/unused-public-var]}
 (defn stdio-server [{:keys [in out] :as opts}]
