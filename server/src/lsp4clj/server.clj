@@ -125,14 +125,14 @@
       (async/go
         ;; wait for pipeline to close, indicating receiver closed
         (async/<! pipeline)
-        (deliver join nil)))
+        (deliver join :done)))
     ;; invokers should deref the return of `start`, so the server stays alive
     ;; until it is shut down
     join)
   (shutdown [_this])
   (exit [_this] ;; wait for shutdown of client to propagate to receiver
     (async/close! receiver)
-    @join)
+    (deref join 10e3 :timeout))
   (send-request [this method body]
     (let [id (swap! request-id* inc)
           req (json-rpc.messages/request id method body)
