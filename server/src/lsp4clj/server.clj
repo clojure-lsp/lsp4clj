@@ -114,21 +114,25 @@
                    join]
   protocols.endpoint/IEndpoint
   (start [this context]
-    (async/pipeline-blocking parallelism
-                             sender
-                             ;; TODO: return error until initialize request is received? https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification/#initialize
-                             ;; TODO: coerce here? Or leave that to servers?
-                             ;; `keep` means we do not reply to responses and notifications
-                             (keep #(receive-message this context %))
-                             receiver)
+    (let [pipeline (async/pipeline-blocking
+                     parallelism
+                     sender
+                     ;; TODO: return error until initialize request is received? https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification/#initialize
+                     ;; TODO: coerce here? Or leave that to servers?
+                     ;; `keep` means we do not reply to responses and notifications
+                     (keep #(receive-message this context %))
+                     receiver)]
+      (async/go
+        ;; wait for pipeline to close, indicating receiver closed
+        (async/<! pipeline)
+        (deliver join nil)))
     ;; invokers should deref the return of `start`, so the server stays alive
     ;; until it is shut down
     join)
-  (shutdown [_this]
-    (async/close! receiver)
-    (deliver join :done))
+  (shutdown [_this])
   (exit [_this] ;; wait for shutdown of client to propagate to receiver
-    (async/<!! sender))
+    (async/close! receiver)
+    @join)
   (send-request [this method body]
     (let [id (swap! request-id* inc)
           req (json-rpc.messages/request id method body)
@@ -201,6 +205,29 @@
       (protocols.endpoint/shutdown server)
       (protocols.endpoint/exit server)
       @join))
+
+  ;; server closes when input closes
+  (let [receiver (async/chan 1)
+        sender (async/chan 1)
+        server (chan-server {:sender sender
+                             :receiver receiver
+                             :parallelism 1
+                             :trace? true})
+        join (protocols.endpoint/start server nil)]
+    (async/close! receiver)
+    @join)
+
+  ;; server closes when asked to
+  (let [receiver (async/chan 1)
+        sender (async/chan 1)
+        server (chan-server {:sender sender
+                             :receiver receiver
+                             :parallelism 1
+                             :trace? true})
+        join (protocols.endpoint/start server nil)]
+    (protocols.endpoint/shutdown server)
+    (protocols.endpoint/exit server)
+    @join)
 
   ;; client replies
   (let [receiver (async/chan 1)
