@@ -62,9 +62,9 @@
         (if (.isDone this)
           false
           (do
+            (reset! cancelled? true)
             (protocols.endpoint/send-notification server "$/cancelRequest" {:id id})
             (deliver p ::cancelled)
-            (reset! cancelled? true)
             true))))))
 
 (defn ^:private receive-message
