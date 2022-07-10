@@ -1,4 +1,5 @@
 (ns lsp4clj.coercer
+  ;; TODO: delete this ns. replace it with coercer-v1, which is currently in clojure-lsp
   (:require
    [clojure.data.json :as json]
    [clojure.java.data :as j]

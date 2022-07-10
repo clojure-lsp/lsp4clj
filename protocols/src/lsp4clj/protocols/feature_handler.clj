@@ -1,3 +1,4 @@
+;; TODO: delete this ns
 (ns lsp4clj.protocols.feature-handler)
 
 #_{:clj-kondo/ignore [:clojure-lsp/unused-public-var]}

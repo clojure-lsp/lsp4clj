@@ -1,4 +1,5 @@
 (ns lsp4clj.core
+  ;; TODO: delete this ns
   (:require
    [clojure.core.async :as async]
    [lsp4clj.coercer :as coercer]

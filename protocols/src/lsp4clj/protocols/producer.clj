@@ -1,3 +1,4 @@
+;; TODO: move this ns to clojure-lsp
 (ns lsp4clj.protocols.producer)
 
 #_{:clj-kondo/ignore [:clojure-lsp/unused-public-var]}
