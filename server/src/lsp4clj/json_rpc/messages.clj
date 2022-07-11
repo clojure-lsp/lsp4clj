@@ -36,9 +36,9 @@
 
 (defn error-response [code-or-name message data]
   (let [default (get error-codes code-or-name)]
-    {:error {:code (if default (:code default) code-or-name)
-             :message (or message (:message default))
-             :data data}}))
+    {:error (cond-> {:code (if default (:code default) code-or-name)
+                     :message (or message (:message default))}
+              data (assoc :data data))}))
 
 (defn standard-error-response
   [code-name data]
