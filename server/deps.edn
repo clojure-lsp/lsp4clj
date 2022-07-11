@@ -3,14 +3,7 @@
         camel-snake-kebab/camel-snake-kebab {:mvn/version "0.4.3"}
         cheshire/cheshire {:mvn/version "5.11.0"}
 
-        org.eclipse.xtend/org.eclipse.xtend.lib {:mvn/version "2.27.0"}
-        org.eclipse.lsp4j/org.eclipse.lsp4j {:mvn/version "0.14.0"  :exclusions [org.eclipse.xtend/org.eclipse.xtend.lib
-                                                                                 com.google.code.gson/gson]}
-        org.clojure/data.json {:mvn/version "2.4.0"}
-        com.google.code.gson/gson {:mvn/version "2.9.0"}
-        lsp4clj/protocols {:local/root "../protocols"}
-        medley/medley {:mvn/version "1.4.0"}
-        org.clojure/java.data {:mvn/version "1.0.95"}}
+        lsp4clj/protocols {:local/root "../protocols"}}
  :paths ["src" "resources"]
  :aliases {:test {:extra-deps {lambdaisland/kaocha {:mvn/version "1.64.1010"}}
                   :extra-paths ["test"]

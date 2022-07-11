@@ -31,6 +31,6 @@
     <url>https://github.com/clojure-lsp/lsp4clj</url>
     <connection>scm:git:git://github.com/clojure-lsp/lsp4clj.git</connection>
     <developerConnection>scm:git:ssh://git@github.com/clojure-lsp/lsp4clj.git</developerConnection>
-    <tag>0.4.3</tag>
+    <tag>v0.4.3</tag>
   </scm>
 </project>
