@@ -46,8 +46,14 @@
     ;; (jsonrpc/method/id/params) and return -32600 Invalid Request if not.
     (json/parse-string content csk/->kebab-case-keyword)))
 
+(defn kw->camelCaseString
+  "Convert keywords to camelCase strings, but preserve capitalization of things
+  that are already strings."
+  [k]
+  (cond-> k (keyword? k) csk/->camelCaseString))
+
 (defn ^:private write-message [msg]
-  (let [content (json/generate-string (cske/transform-keys csk/->camelCaseString msg))]
+  (let [content (json/generate-string (cske/transform-keys kw->camelCaseString msg))]
     (print (str "Content-Length: " (count (.getBytes content "utf-8")) "\r\n"
                 "\r\n"
                 content))
