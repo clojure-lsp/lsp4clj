@@ -93,10 +93,10 @@
 
 ;; TODO: Does LSP have a standard format for traces?
 (defn ^:private format-trace
-  ([description method message]
-   (str "trace - " description " " method " " message))
-  ([description id method message]
-   (format-trace description (str method " " id) message)))
+  ([description method body]
+   (str "trace - " description " " method " " body))
+  ([description id method body]
+   (format-trace description (str method " " id) body)))
 ;; TODO: Send traces elsewhere?
 (defn ^:private trace-received-notification [method notif] (logger/debug (format-trace "received notification" method notif)))
 (defn ^:private trace-received-request [id method req] (logger/debug (format-trace "received request" id method req)))

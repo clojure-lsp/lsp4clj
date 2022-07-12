@@ -76,20 +76,24 @@
 
 (defn input-stream->receiver-chan
   "Returns a channel which will yield parsed messages that have been read off
-  the input. When the input is closed, closes the channel."
-  [^java.io.InputStream input]
-  (let [msgs (async/chan 1)]
-    (async/go-loop [headers {}]
-      (let [line (async/<! (read-line-async input))]
-        (cond
-          ;; input closed; also close channel
-          (= line ::eof)       (async/close! msgs)
-          ;; a blank line after the headers indicates start of message
-          (string/blank? line) (do
-                                 (async/>! msgs (read-message input headers))
-                                 (recur {}))
-          :else                (recur (parse-header line headers)))))
-    msgs))
+  the `input`. When the input is closed, closes the channel. By default when the
+  channel closes, will close the input, but can be determined by `close?`."
+  ([input] (input-stream->receiver-chan input true))
+  ([^java.io.InputStream input close?]
+   (let [msgs (async/chan 1)]
+     (async/go-loop [headers {}]
+       (let [line (async/<! (read-line-async input))]
+         (cond
+           ;; input closed; also close channel
+           (= line ::eof)       (async/close! msgs)
+           ;; a blank line after the headers indicates start of message
+           (string/blank? line) (if (async/>! msgs (read-message input headers))
+                                  ;; wait for next message
+                                  (recur {})
+                                  ;; msgs closed
+                                  (when close? (.close input)))
+           :else                (recur (parse-header line headers)))))
+     msgs)))
 
 (defn output-stream->sender-chan
   "Returns a channel which expects to have messages put on it. nil values are
