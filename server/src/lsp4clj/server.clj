@@ -9,6 +9,44 @@
 (defprotocol IBlockingDerefOrCancel
   (deref-or-cancel [this timeout-ms timeout-val]))
 
+(defrecord PendingRequest [p cancelled? id method server]
+  clojure.lang.IDeref
+  (deref [_] (deref p))
+  clojure.lang.IBlockingDeref
+  (deref [_ timeout-ms timeout-val]
+    (deref p timeout-ms timeout-val))
+  IBlockingDerefOrCancel
+  (deref-or-cancel [this timeout-ms timeout-val]
+    (let [result (deref this timeout-ms ::timeout)]
+      (if (= ::timeout result)
+        (do (future-cancel this)
+            timeout-val)
+        result)))
+  clojure.lang.IPending
+  (isRealized [_] (realized? p))
+  java.util.concurrent.Future
+  (get [this]
+    (let [result (deref this)]
+      (if (= ::cancelled result)
+        (throw (java.util.concurrent.CancellationException.))
+        result)))
+  (get [this timeout unit]
+    (let [result (deref this (.toMillis unit timeout) ::timeout)]
+      (case result
+        ::cancelled (throw (java.util.concurrent.CancellationException.))
+        ::timeout (throw (java.util.concurrent.TimeoutException.))
+        result)))
+  (isCancelled [_] @cancelled?)
+  (isDone [this] (or (.isRealized this) (.isCancelled this)))
+  (cancel [this _interrupt?]
+    (if (.isDone this)
+      false
+      (do
+        (reset! cancelled? true)
+        (protocols.endpoint/send-notification server "$/cancelRequest" {:id id})
+        (deliver p ::cancelled)
+        true))))
+
 (defn pending-request
   "Returns an object representing a pending JSON-RPC request to a remote
   endpoint. Deref the object to get the response.
@@ -28,45 +66,12 @@
 
   Sends `$/cancelRequest` only once, though it is permitted to call
   `lsp4clj.server/deref-or-cancel` and `future-cancel` multiple times."
-  [p id server]
-  (let [cancelled? (atom false)]
-    (reify
-      clojure.lang.IDeref
-      (deref [_] (deref p))
-      clojure.lang.IBlockingDeref
-      (deref [_ timeout-ms timeout-val]
-        (deref p timeout-ms timeout-val))
-      IBlockingDerefOrCancel
-      (deref-or-cancel [this timeout-ms timeout-val]
-        (let [result (deref this timeout-ms ::timeout)]
-          (if (= ::timeout result)
-            (do (future-cancel this)
-                timeout-val)
-            result)))
-      clojure.lang.IPending
-      (isRealized [_] (realized? p))
-      java.util.concurrent.Future
-      (get [this]
-        (let [result (deref this)]
-          (if (= ::cancelled result)
-            (throw (java.util.concurrent.CancellationException.))
-            result)))
-      (get [this timeout unit]
-        (let [result (deref this (.toMillis unit timeout) ::timeout)]
-          (case result
-            ::cancelled (throw (java.util.concurrent.CancellationException.))
-            ::timeout (throw (java.util.concurrent.TimeoutException.))
-            result)))
-      (isCancelled [_] @cancelled?)
-      (isDone [this] (or (.isRealized this) (.isCancelled this)))
-      (cancel [this _interrupt?]
-        (if (.isDone this)
-          false
-          (do
-            (reset! cancelled? true)
-            (protocols.endpoint/send-notification server "$/cancelRequest" {:id id})
-            (deliver p ::cancelled)
-            true))))))
+  [id method server]
+  (map->PendingRequest {:p (promise)
+                        :cancelled? (atom false)
+                        :id id
+                        :method method
+                        :server server}))
 
 (defn ^:private receive-message
   [server context message]
@@ -152,24 +157,24 @@
   (send-request [this method body]
     (let [id (swap! request-id* inc)
           req (json-rpc.messages/request id method body)
-          p (promise)]
+          pending-request (pending-request id method this)]
       (when trace? (trace-sending-request id method req))
       ;; Important: record request before sending it, so it is sure to be
       ;; available during receive-response.
-      (swap! pending-requests* assoc id [p method])
+      (swap! pending-requests* assoc id pending-request)
       (async/>!! sender req)
-      (pending-request p id this)))
+      pending-request))
   (send-notification [_this method body]
     (let [notif (json-rpc.messages/request method body)]
       (when trace? (trace-sending-notification method notif))
       (async/put! sender notif)))
   (receive-response [_this {:keys [id] :as resp}]
-    (if-let [[request method] (get @pending-requests* id)]
+    (if-let [{:keys [id method p]} (get @pending-requests* id)]
       (do (when trace? (trace-received-response id method resp))
           (swap! pending-requests* dissoc id)
-          (deliver request (if (:error resp)
-                             resp
-                             (:result resp))))
+          (deliver p (if (:error resp)
+                       resp
+                       (:result resp))))
       (logger/debug "received response for unmatched request:" resp)))
   (receive-request [_this context {:keys [id method params] :as req}]
     (when trace? (trace-received-request id method req))
