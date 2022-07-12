@@ -95,14 +95,24 @@
 (defn ^:private trace-sending-request [method req] (logger/debug "trace - sending request" method req))
 (defn ^:private trace-sending-response [method resp] (logger/debug "trace - sending response" method resp))
 
-(defmulti handle-request (fn [method _context _params] method))
-(defmulti handle-notification (fn [method _context _params] method))
+;; Expose endpoint methods to language servers
+(def start protocols.endpoint/start)
+(def shutdown protocols.endpoint/shutdown)
+(def exit protocols.endpoint/exit)
+(def send-request protocols.endpoint/send-request)
+(def send-notification protocols.endpoint/send-notification)
 
-(defmethod handle-request :default [method _context _params]
+;; Let language servers implement their own message receivers. These are
+;; slightly different from protocols.endpont/receive-request, in that they
+;; receive the message params, not the whole message.
+(defmulti receive-request (fn [method _context _params] method))
+(defmulti receive-notification (fn [method _context _params] method))
+
+(defmethod receive-request :default [method _context _params]
   (logger/debug "received unexpected request" method)
   (json-rpc.messages/standard-error-response :method-not-found {:method method}))
 
-(defmethod handle-notification :default [method _context _params]
+(defmethod receive-notification :default [method _context _params]
   (logger/debug "received unexpected notification" method))
 
 (defrecord Server [parallelism
@@ -157,13 +167,13 @@
       (logger/debug "received response for unmatched request:" resp)))
   (receive-request [_this context {:keys [id method params] :as req}]
     (when trace? (trace-received-request method req))
-    (let [result (handle-request method context params)
+    (let [result (receive-request method context params)
           resp (json-rpc.messages/response id result)]
       (when trace? (trace-sending-response method resp))
       resp))
   (receive-notification [_this context {:keys [method params] :as notif}]
     (when trace? (trace-received-notification method notif))
-    (handle-notification method context params)))
+    (receive-notification method context params)))
 
 (defn chan-server [{:keys [sender receiver parallelism trace?]
                     :or {parallelism 4, trace? false}}]
