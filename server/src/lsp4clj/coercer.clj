@@ -384,7 +384,7 @@
                    :server-capabilities/signature-help-provider
                    :server-capabilities/text-document-sync]))
 
-(defn conform-or-log [value spec]
+(defn conform-or-log [spec value]
   (when value
     (try
       (let [result (s/conform spec value)]
