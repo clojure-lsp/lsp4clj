@@ -9,8 +9,9 @@
 (defprotocol IBlockingDerefOrCancel
   (deref-or-cancel [this timeout-ms timeout-val]))
 
-(defn request
-  "Returns an object representing a JSON-RPC request to a remote endpoint.
+(defn pending-request
+  "Returns an object representing a pending JSON-RPC request to a remote
+  endpoint. Deref the object to get the response.
 
   Most of the time, you should call `lsp4clj.server/deref-or-cancel` on the
   object. This has the same signature as `clojure.core/deref` with a timeout. If
@@ -152,7 +153,7 @@
       ;; available during receive-response.
       (swap! pending-requests* assoc id p)
       (async/>!! sender req)
-      (request p id this)))
+      (pending-request p id this)))
   (send-notification [_this method body]
     (let [notif (json-rpc.messages/request method body)]
       (when trace? (trace-sending-notification method notif))
@@ -321,7 +322,7 @@
                              :parallelism 1
                              :trace? true})
         p (promise)
-        req (request p 1 server)]
+        req (pending-request p 1 server)]
     #_(deliver p :done)
     #_(future-cancel req)
     (prn (realized? req))
@@ -335,7 +336,7 @@
                              :parallelism 1
                              :trace? true})
         p (promise)
-        req (request p 1 server)]
+        req (pending-request p 1 server)]
     #_(deliver p :done)
     #_(future-cancel req)
     (prn (.get req 1 java.util.concurrent.TimeUnit/SECONDS)))
