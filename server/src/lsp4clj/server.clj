@@ -87,14 +87,19 @@
     (logger/debug "client closed? or json parse error?")))
 
 ;; TODO: Does LSP have a standard format for traces?
+(defn ^:private format-trace
+  ([description method message]
+   (str "trace - " description " " method " " message))
+  ([description id method message]
+   (format-trace description (str method " " id) message)))
 ;; TODO: Send traces elsewhere?
-(defn ^:private trace-received-notification [method notif] (logger/debug "trace - received notification" method notif))
-(defn ^:private trace-received-request [method req] (logger/debug "trace - received request" method req))
-(defn ^:private trace-received-response [resp] (logger/debug "trace - received response" resp))
+(defn ^:private trace-received-notification [method notif] (logger/debug (format-trace "received notification" method notif)))
+(defn ^:private trace-received-request [id method req] (logger/debug (format-trace "received request" id method req)))
+(defn ^:private trace-received-response [id method resp] (logger/debug (format-trace "received reponse" id method resp)))
 ;; TODO: Are you supposed to trace before or after sending?
-(defn ^:private trace-sending-notification [method notif] (logger/debug "trace - sending notification" method notif))
-(defn ^:private trace-sending-request [method req] (logger/debug "trace - sending request" method req))
-(defn ^:private trace-sending-response [method resp] (logger/debug "trace - sending response" method resp))
+(defn ^:private trace-sending-notification [method notif] (logger/debug (format-trace "sending notification" method notif)))
+(defn ^:private trace-sending-request [id method req] (logger/debug (format-trace "sending request" id method req)))
+(defn ^:private trace-sending-response [id method resp] (logger/debug (format-trace "sending reponse" id method resp) resp))
 
 ;; Expose endpoint methods to language servers
 (def start protocols.endpoint/start)
@@ -148,10 +153,10 @@
     (let [id (swap! request-id* inc)
           req (json-rpc.messages/request id method body)
           p (promise)]
-      (when trace? (trace-sending-request method req))
+      (when trace? (trace-sending-request id method req))
       ;; Important: record request before sending it, so it is sure to be
       ;; available during receive-response.
-      (swap! pending-requests* assoc id p)
+      (swap! pending-requests* assoc id [p method])
       (async/>!! sender req)
       (pending-request p id this)))
   (send-notification [_this method body]
@@ -159,18 +164,18 @@
       (when trace? (trace-sending-notification method notif))
       (async/put! sender notif)))
   (receive-response [_this {:keys [id] :as resp}]
-    (if-let [request (get @pending-requests* id)]
-      (do (when trace? (trace-received-response resp))
+    (if-let [[request method] (get @pending-requests* id)]
+      (do (when trace? (trace-received-response id method resp))
           (swap! pending-requests* dissoc id)
           (deliver request (if (:error resp)
                              resp
                              (:result resp))))
       (logger/debug "received response for unmatched request:" resp)))
   (receive-request [_this context {:keys [id method params] :as req}]
-    (when trace? (trace-received-request method req))
+    (when trace? (trace-received-request id method req))
     (let [result (receive-request method context params)
           resp (json-rpc.messages/response id result)]
-      (when trace? (trace-sending-response method resp))
+      (when trace? (trace-sending-response id method resp))
       resp))
   (receive-notification [_this context {:keys [method params] :as notif}]
     (when trace? (trace-received-notification method notif))
