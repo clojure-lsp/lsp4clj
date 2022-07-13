@@ -128,7 +128,7 @@
   (logger/debug "received unexpected notification" method))
 
 (defrecord ChanServer [parallelism
-                       trace?
+                       trace-ch
                        input
                        output
                        ^java.time.Clock clock
@@ -162,7 +162,7 @@
           now (.instant clock)
           req (json-rpc.messages/request id method body)
           pending-request (pending-request id method now this)]
-      (when trace? (logger/debug (trace/sending-request id method body now)))
+      (some-> trace-ch (async/put! (trace/sending-request id method body now)))
       ;; Important: record request before sending it, so it is sure to be
       ;; available during receive-response.
       (swap! pending-requests* assoc id pending-request)
@@ -172,37 +172,37 @@
   (send-notification [_this method body]
     (let [now (.instant clock)
           notif (json-rpc.messages/request method body)]
-      (when trace? (logger/debug (trace/sending-notification method body now)))
+      (some-> trace-ch (async/put! (trace/sending-notification method body now)))
       ;; respect back pressure from clients that are slow to read; (go (>!)) will not suffice
       (async/>!! output notif)))
   (receive-response [_this {:keys [id] :as resp}]
-    (if-let [{:keys [id method p started]} (get @pending-requests* id)]
-      (let [now (.instant clock)
-            error (:error resp)
-            result (:result resp)]
-        (when trace? (logger/debug (trace/received-response id method result error started now)))
-        (swap! pending-requests* dissoc id)
-        (deliver p (if error resp result)))
-      (logger/debug "received response for unmatched request:" resp)))
+    (let [now (.instant clock)]
+      (if-let [{:keys [id method p started]} (get @pending-requests* id)]
+        (let [error (:error resp)
+              result (:result resp)]
+          (some-> trace-ch (async/put! (trace/received-response id method result error started now)))
+          (swap! pending-requests* dissoc id)
+          (deliver p (if error resp result)))
+        (some-> trace-ch (async/put! (trace/received-unmatched-response now resp))))))
   (receive-request [_this context {:keys [id method params]}]
     (let [started (.instant clock)]
-      (when trace? (logger/debug (trace/received-request id method params started)))
+      (some-> trace-ch (async/put! (trace/received-request id method params started)))
       (let [result (receive-request method context params)
             resp (json-rpc.messages/response id result)
             finished (.instant clock)]
-        (when trace? (logger/debug (trace/sending-response id method result started finished)))
+        (some-> trace-ch (async/put! (trace/sending-response id method result started finished)))
         resp)))
   (receive-notification [_this context {:keys [method params]}]
-    (when trace? (logger/debug (trace/received-notification method params (.instant clock))))
+    (some-> trace-ch (async/put! (trace/received-notification method params (.instant clock))))
     (receive-notification method context params)))
 
 (defn chan-server [{:keys [output input parallelism trace? clock]
                     :or {parallelism 4, trace? false, clock (java.time.Clock/systemDefaultZone)}}]
   (map->ChanServer
     {:parallelism parallelism
-     :trace? trace?
      :output output
      :input input
+     :trace-ch (when trace? (async/chan (async/sliding-buffer 20)))
      :clock clock
      :request-id* (atom 0)
      :pending-requests* (atom {})
