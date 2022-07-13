@@ -4,12 +4,13 @@
    [lsp4clj.json-rpc :as json-rpc]
    [lsp4clj.json-rpc.messages :as json-rpc.messages]
    [lsp4clj.protocols.endpoint :as protocols.endpoint]
-   [lsp4clj.protocols.logger :as logger]))
+   [lsp4clj.protocols.logger :as logger]
+   [lsp4clj.trace :as trace]))
 
 (defprotocol IBlockingDerefOrCancel
   (deref-or-cancel [this timeout-ms timeout-val]))
 
-(defrecord PendingRequest [p cancelled? id method server]
+(defrecord PendingRequest [p cancelled? id method started server]
   clojure.lang.IDeref
   (deref [_] (deref p))
   clojure.lang.IBlockingDeref
@@ -66,11 +67,12 @@
 
   Sends `$/cancelRequest` only once, though it is permitted to call
   `lsp4clj.server/deref-or-cancel` and `future-cancel` multiple times."
-  [id method server]
+  [id method started server]
   (map->PendingRequest {:p (promise)
                         :cancelled? (atom false)
                         :id id
                         :method method
+                        :started started
                         :server server}))
 
 (defn ^:private receive-message
@@ -90,21 +92,6 @@
         (logger/debug e "exception receiving")))
     ;; TODO: what does a nil message signify? What should we do with it?
     (logger/debug "client closed? or json parse error?")))
-
-;; TODO: Does LSP have a standard format for traces?
-(defn ^:private format-trace
-  ([description method body]
-   (str "trace - " description " " method " " body))
-  ([description id method body]
-   (format-trace description (str method " " id) body)))
-;; TODO: Send traces elsewhere?
-(defn ^:private trace-received-notification [method notif] (logger/debug (format-trace "received notification" method notif)))
-(defn ^:private trace-received-request [id method req] (logger/debug (format-trace "received request" id method req)))
-(defn ^:private trace-received-response [id method resp] (logger/debug (format-trace "received reponse" id method resp)))
-;; TODO: Are you supposed to trace before or after sending?
-(defn ^:private trace-sending-notification [method notif] (logger/debug (format-trace "sending notification" method notif)))
-(defn ^:private trace-sending-request [id method req] (logger/debug (format-trace "sending request" id method req)))
-(defn ^:private trace-sending-response [id method resp] (logger/debug (format-trace "sending reponse" id method resp) resp))
 
 ;; Expose endpoint methods to language servers
 
@@ -137,6 +124,7 @@
                        trace?
                        receiver
                        sender
+                       ^java.time.Clock clock
                        request-id*
                        pending-requests*
                        join]
@@ -163,9 +151,10 @@
     (deref join 10e3 :timeout))
   (send-request [this method body]
     (let [id (swap! request-id* inc)
+          now (.instant clock)
           req (json-rpc.messages/request id method body)
-          pending-request (pending-request id method this)]
-      (when trace? (trace-sending-request id method req))
+          pending-request (pending-request id method now this)]
+      (when trace? (logger/debug (trace/sending-request id method body now)))
       ;; Important: record request before sending it, so it is sure to be
       ;; available during receive-response.
       (swap! pending-requests* assoc id pending-request)
@@ -173,35 +162,40 @@
       (async/>!! sender req)
       pending-request))
   (send-notification [_this method body]
-    (let [notif (json-rpc.messages/request method body)]
-      (when trace? (trace-sending-notification method notif))
+    (let [now (.instant clock)
+          notif (json-rpc.messages/request method body)]
+      (when trace? (logger/debug (trace/sending-notification method body now)))
       ;; respect back pressure from clients that are slow to read; (go (>!)) will not suffice
       (async/>!! sender notif)))
   (receive-response [_this {:keys [id] :as resp}]
-    (if-let [{:keys [id method p]} (get @pending-requests* id)]
-      (do (when trace? (trace-received-response id method resp))
-          (swap! pending-requests* dissoc id)
-          (deliver p (if (:error resp)
-                       resp
-                       (:result resp))))
+    (if-let [{:keys [id method p started]} (get @pending-requests* id)]
+      (let [now (.instant clock)
+            error (:error resp)
+            result (:result resp)]
+        (when trace? (logger/debug (trace/received-response id method result error started now)))
+        (swap! pending-requests* dissoc id)
+        (deliver p (if error resp result)))
       (logger/debug "received response for unmatched request:" resp)))
-  (receive-request [_this context {:keys [id method params] :as req}]
-    (when trace? (trace-received-request id method req))
-    (let [result (receive-request method context params)
-          resp (json-rpc.messages/response id result)]
-      (when trace? (trace-sending-response id method resp))
-      resp))
-  (receive-notification [_this context {:keys [method params] :as notif}]
-    (when trace? (trace-received-notification method notif))
+  (receive-request [_this context {:keys [id method params]}]
+    (let [started (.instant clock)]
+      (when trace? (logger/debug (trace/received-request id method params started)))
+      (let [result (receive-request method context params)
+            resp (json-rpc.messages/response id result)
+            finished (.instant clock)]
+        (when trace? (logger/debug (trace/sending-response id method result started finished)))
+        resp)))
+  (receive-notification [_this context {:keys [method params]}]
+    (when trace? (logger/debug (trace/received-notification method params (.instant clock))))
     (receive-notification method context params)))
 
-(defn chan-server [{:keys [sender receiver parallelism trace?]
-                    :or {parallelism 4, trace? false}}]
+(defn chan-server [{:keys [output input parallelism trace? clock]
+                    :or {parallelism 4, trace? false, clock (java.time.Clock/systemDefaultZone)}}]
   (map->ChanServer
     {:parallelism parallelism
      :trace? trace?
      :sender sender
      :receiver receiver
+     :clock clock
      :request-id* (atom 0)
      :pending-requests* (atom {})
      :join (promise)}))
