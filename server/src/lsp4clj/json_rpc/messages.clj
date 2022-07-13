@@ -44,6 +44,7 @@
   [code-name data]
   (error-response code-name nil data))
 
+#_{:clj-kondo/ignore [:clojure-lsp/unused-public-var]}
 (defn work-done-progress [percentage message progress-token]
   (let [percentage (int percentage)
         progress {:kind (case percentage

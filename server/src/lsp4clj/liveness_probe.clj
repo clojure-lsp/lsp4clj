@@ -25,6 +25,7 @@
       (logger/warn "Liveness probe - Checking if process is alive failed." e)
       true)))
 
+#_{:clj-kondo/ignore [:clojure-lsp/unused-public-var]}
 (defn start!
   [ppid on-exit]
   (async/go-loop []

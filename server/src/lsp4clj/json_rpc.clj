@@ -71,13 +71,13 @@
         (do (.append s (char b))
             (recur s))))))
 
-(defn input-stream->receiver-chan
+(defn input-stream->input-chan
   "Returns a channel which will yield parsed messages that have been read off
   the `input`. When the input is closed, closes the channel. By default when the
   channel closes, will close the input, but can be determined by `close?`.
 
   Reads in a thread to avoid blocking a go block thread."
-  ([input] (input-stream->receiver-chan input true))
+  ([input] (input-stream->input-chan input true))
   ([^java.io.InputStream input close?]
    (let [msgs (async/chan 1)]
      (async/thread
@@ -95,7 +95,7 @@
              :else                (recur (parse-header line headers))))))
      msgs)))
 
-(defn output-stream->sender-chan
+(defn output-stream->output-chan
   "Returns a channel which expects to have messages put on it. nil values are
   not allowed. Serializes and writes the messages to the output. When the
   channel is closed, closes the output.

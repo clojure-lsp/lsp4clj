@@ -7,6 +7,8 @@
    [lsp4clj.protocols.logger :as logger]
    [lsp4clj.trace :as trace]))
 
+(set! *warn-on-reflection* true)
+
 (defprotocol IBlockingDerefOrCancel
   (deref-or-cancel [this timeout-ms timeout-val]))
 
@@ -122,8 +124,8 @@
 
 (defrecord ChanServer [parallelism
                        trace?
-                       receiver
-                       sender
+                       input
+                       output
                        ^java.time.Clock clock
                        request-id*
                        pending-requests*
@@ -132,23 +134,24 @@
   (start [this context]
     (let [pipeline (async/pipeline-blocking
                      parallelism
-                     sender
+                     output
                      ;; TODO: return error until initialize request is received? https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification/#initialize
-                     ;; TODO: coerce here? Or leave that to servers?
                      ;; `keep` means we do not reply to responses and notifications
                      (keep #(receive-message this context %))
-                     receiver)]
+                     input)]
       (async/go
-        ;; wait for pipeline to close, indicating receiver closed
+        ;; wait for pipeline to close, indicating input closed
         (async/<! pipeline)
         (deliver join :done)))
     ;; invokers should deref the return of `start`, so the server stays alive
     ;; until it is shut down
     join)
-  (shutdown [_this])
-  (exit [_this] ;; wait for shutdown of client to propagate to receiver
-    (async/close! receiver)
+  (shutdown [_this]
+    ;; closing input will drain pipeline, then close output, then close
+    ;; pipeline, then deliver join
+    (async/close! input)
     (deref join 10e3 :timeout))
+  (exit [_this])
   (send-request [this method body]
     (let [id (swap! request-id* inc)
           now (.instant clock)
@@ -159,14 +162,14 @@
       ;; available during receive-response.
       (swap! pending-requests* assoc id pending-request)
       ;; respect back pressure from clients that are slow to read; (go (>!)) will not suffice
-      (async/>!! sender req)
+      (async/>!! output req)
       pending-request))
   (send-notification [_this method body]
     (let [now (.instant clock)
           notif (json-rpc.messages/request method body)]
       (when trace? (logger/debug (trace/sending-notification method body now)))
       ;; respect back pressure from clients that are slow to read; (go (>!)) will not suffice
-      (async/>!! sender notif)))
+      (async/>!! output notif)))
   (receive-response [_this {:keys [id] :as resp}]
     (if-let [{:keys [id method p started]} (get @pending-requests* id)]
       (let [now (.instant clock)
@@ -193,8 +196,8 @@
   (map->ChanServer
     {:parallelism parallelism
      :trace? trace?
-     :sender sender
-     :receiver receiver
+     :output output
+     :input input
      :clock clock
      :request-id* (atom 0)
      :pending-requests* (atom {})
@@ -203,155 +206,5 @@
 #_{:clj-kondo/ignore [:clojure-lsp/unused-public-var]}
 (defn stdio-server [{:keys [in out] :as opts}]
   (chan-server (assoc opts
-                      :receiver (json-rpc/input-stream->receiver-chan in)
-                      :sender (json-rpc/output-stream->sender-chan out))))
-(comment
-  (let [receiver (async/chan 1)
-        sender (async/chan 1)
-        server (chan-server {:sender sender
-                             :receiver receiver
-                             :parallelism 1
-                             :trace? true})]
-    (prn "sending message to receiver")
-    (async/put! receiver {:id 1
-                          :method "foo"
-                          :params {}})
-    (prn "sent message to receiver")
-    (let [join (protocols.endpoint/start server nil)]
-      (prn "gettting message from sender")
-      (async/<!! sender)
-      (prn "got message from sender")
-      (prn "sending message to receiver")
-      (async/put! receiver {:id 2
-                            :method "bar"
-                            :params {}})
-      (prn "sent message to receiver")
-      (protocols.endpoint/shutdown server)
-      (protocols.endpoint/exit server)
-      @join))
-
-  ;; server closes when input closes
-  (let [receiver (async/chan 1)
-        sender (async/chan 1)
-        server (chan-server {:sender sender
-                             :receiver receiver
-                             :parallelism 1
-                             :trace? true})
-        join (protocols.endpoint/start server nil)]
-    (async/close! receiver)
-    @join)
-
-  ;; server closes when asked to
-  (let [receiver (async/chan 1)
-        sender (async/chan 1)
-        server (chan-server {:sender sender
-                             :receiver receiver
-                             :parallelism 1
-                             :trace? true})
-        join (protocols.endpoint/start server nil)]
-    (protocols.endpoint/shutdown server)
-    (protocols.endpoint/exit server)
-    @join)
-
-  ;; client replies
-  (let [receiver (async/chan 1)
-        sender (async/chan 1)
-        server (chan-server {:sender sender
-                             :receiver receiver
-                             :parallelism 1
-                             :trace? true})
-        join (protocols.endpoint/start server nil)
-        req (protocols.endpoint/send-request server "req" {:body "foo"})
-        client-rcvd-msg (async/<!! sender)]
-    (prn :client-received-request client-rcvd-msg)
-    (async/put! receiver {:id (:id client-rcvd-msg)
-                          :result {:processed true}})
-    (prn :server-received-response @req)
-    (protocols.endpoint/shutdown server)
-    (protocols.endpoint/exit server)
-    @join)
-
-  ;; client doesn't reply; server cancels
-  (let [receiver (async/chan 1)
-        sender (async/chan 1)
-        server (chan-server {:sender sender
-                             :receiver receiver
-                             :parallelism 1
-                             :trace? true})
-        join (protocols.endpoint/start server nil)
-        req (protocols.endpoint/send-request server "req" {:body "foo"})]
-    (prn :client-received (async/<!! sender))
-    (prn :server-received (deref-or-cancel req 1000 :test-timeout))
-    (prn :client-received (async/<!! sender))
-    (protocols.endpoint/shutdown server)
-    (protocols.endpoint/exit server)
-    @join)
-
-  ; client replies; server cancels (but no $/cancelRequest)
-  (let [receiver (async/chan 1)
-        sender (async/chan 1)
-        server (chan-server {:sender sender
-                             :receiver receiver
-                             :parallelism 1
-                             :trace? true})
-        join (protocols.endpoint/start server nil)
-        req (protocols.endpoint/send-request server "req" {:body "foo"})
-        client-rcvd-msg (async/<!! sender)]
-    (prn :client-received client-rcvd-msg)
-    (async/put! receiver {:id (:id client-rcvd-msg)
-                          :result {:processed true}})
-    (prn :server-received (deref-or-cancel req 1000 :test-timeout))
-    (prn :client-received (let [timeout (async/timeout 1000)
-                                [result ch] (async/alts!! [sender timeout])]
-                            (if (= ch timeout)
-                              :nothing
-                              result)))
-    (prn :server-cancel (future-cancel req))
-    (protocols.endpoint/shutdown server)
-    (protocols.endpoint/exit server)
-    @join)
-
-  ;; server cancels
-  (let [receiver (async/chan 1)
-        sender (async/chan 1)
-        server (chan-server {:sender sender
-                             :receiver receiver
-                             :parallelism 1
-                             :trace? true})
-        join (protocols.endpoint/start server nil)
-        req (protocols.endpoint/send-request server "req" {:body "foo"})]
-    (prn :server-cancel (future-cancel req))
-    (prn :server-cancel (future-cancel req))
-    (prn :client-received (async/<!! sender))
-    (prn :client-received (async/<!! sender))
-    (protocols.endpoint/shutdown server)
-    (protocols.endpoint/exit server)
-    @join)
-
-  (let [receiver (async/chan 1)
-        sender (async/chan 1)
-        server (chan-server {:sender sender
-                             :receiver receiver
-                             :parallelism 1
-                             :trace? true})
-        p (promise)
-        req (pending-request p 1 server)]
-    #_(deliver p :done)
-    #_(future-cancel req)
-    (prn (realized? req))
-    (prn (future-done? req))
-    (prn (future-cancelled? req)))
-
-  (let [receiver (async/chan 1)
-        sender (async/chan 1)
-        server (chan-server {:sender sender
-                             :receiver receiver
-                             :parallelism 1
-                             :trace? true})
-        p (promise)
-        req (pending-request p 1 server)]
-    #_(deliver p :done)
-    #_(future-cancel req)
-    (prn (.get req 1 java.util.concurrent.TimeUnit/SECONDS)))
-
-  #_())
+                      :input (json-rpc/input-stream->input-chan in)
+                      :output (json-rpc/output-stream->output-chan out))))
