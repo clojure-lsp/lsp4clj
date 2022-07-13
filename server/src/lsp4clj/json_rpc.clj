@@ -59,54 +59,57 @@
                 content))
     (flush)))
 
-(defn ^:private read-line-async
-  "Reads a line of input asynchronously. Returns a channel which will yield the
-  line when it is ready, or nil if the input has closed. Returns immediately.
-  Avoids blocking by reading in a separate thread."
+(defn ^:private read-header-line
+  "Reads a line of input. Blocks if there are no messages on the input."
   [^java.io.InputStream input]
-  (async/thread
-    (loop [s (java.lang.StringBuilder.)]
-      (let [b (.read input)]
-        (case b
-          -1 ::eof ;; end of stream
-          #_lf 10 (str s) ;; finished reading line
-          #_cr 13 (recur s) ;; ignore carriage returns
-          (do (.append s (char b))
-              (recur s)))))))
+  (loop [s (java.lang.StringBuilder.)]
+    (let [b (.read input)]
+      (case b
+        -1 ::eof ;; end of stream
+        #_lf 10 (str s) ;; finished reading line
+        #_cr 13 (recur s) ;; ignore carriage returns
+        (do (.append s (char b))
+            (recur s))))))
 
 (defn input-stream->receiver-chan
   "Returns a channel which will yield parsed messages that have been read off
   the `input`. When the input is closed, closes the channel. By default when the
-  channel closes, will close the input, but can be determined by `close?`."
+  channel closes, will close the input, but can be determined by `close?`.
+
+  Reads in a thread to avoid blocking a go block thread."
   ([input] (input-stream->receiver-chan input true))
   ([^java.io.InputStream input close?]
    (let [msgs (async/chan 1)]
-     (async/go-loop [headers {}]
-       (let [line (async/<! (read-line-async input))]
-         (cond
-           ;; input closed; also close channel
-           (= line ::eof)       (async/close! msgs)
-           ;; a blank line after the headers indicates start of message
-           (string/blank? line) (if (async/>! msgs (read-message input headers))
-                                  ;; wait for next message
-                                  (recur {})
-                                  ;; msgs closed
-                                  (when close? (.close input)))
-           :else                (recur (parse-header line headers)))))
+     (async/thread
+       (loop [headers {}]
+         (let [line (read-header-line input)]
+           (cond
+             ;; input closed; also close channel
+             (= line ::eof)       (async/close! msgs)
+             ;; a blank line after the headers indicates start of message
+             (string/blank? line) (if (async/>!! msgs (read-message input headers))
+                                    ;; wait for next message
+                                    (recur {})
+                                    ;; msgs closed
+                                    (when close? (.close input)))
+             :else                (recur (parse-header line headers))))))
      msgs)))
 
 (defn output-stream->sender-chan
   "Returns a channel which expects to have messages put on it. nil values are
   not allowed. Serializes and writes the messages to the output. When the
-  channel is closed, closes the output."
+  channel is closed, closes the output.
+
+  Writes in a thread to avoid blocking a go block thread."
   [^java.io.OutputStream output]
   (let [messages (async/chan 1)]
     (binding [*out* (io/writer output)]
-      (async/go-loop []
-        (if-let [msg (async/<! messages)]
-          (do
-            (write-message msg)
-            (recur))
-          ;; channel closed; also close output
-          (.close output))))
+      (async/thread
+        (loop []
+          (if-let [msg (async/<!! messages)]
+            (do
+              (write-message msg)
+              (recur))
+            ;; channel closed; also close output
+            (.close output)))))
     messages))
