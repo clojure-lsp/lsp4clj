@@ -107,15 +107,22 @@
 (defn ^:private trace-sending-response [id method resp] (logger/debug (format-trace "sending reponse" id method resp) resp))
 
 ;; Expose endpoint methods to language servers
+
+#_{:clj-kondo/ignore [:clojure-lsp/unused-public-var]}
 (def start protocols.endpoint/start)
+#_{:clj-kondo/ignore [:clojure-lsp/unused-public-var]}
 (def shutdown protocols.endpoint/shutdown)
+#_{:clj-kondo/ignore [:clojure-lsp/unused-public-var]}
 (def exit protocols.endpoint/exit)
+#_{:clj-kondo/ignore [:clojure-lsp/unused-public-var]}
 (def send-request protocols.endpoint/send-request)
+#_{:clj-kondo/ignore [:clojure-lsp/unused-public-var]}
 (def send-notification protocols.endpoint/send-notification)
 
 ;; Let language servers implement their own message receivers. These are
 ;; slightly different from protocols.endpont/receive-request, in that they
 ;; receive the message params, not the whole message.
+
 (defmulti receive-request (fn [method _context _params] method))
 (defmulti receive-notification (fn [method _context _params] method))
 
@@ -126,13 +133,13 @@
 (defmethod receive-notification :default [method _context _params]
   (logger/debug "received unexpected notification" method))
 
-(defrecord Server [parallelism
-                   trace?
-                   receiver
-                   sender
-                   request-id*
-                   pending-requests*
-                   join]
+(defrecord ChanServer [parallelism
+                       trace?
+                       receiver
+                       sender
+                       request-id*
+                       pending-requests*
+                       join]
   protocols.endpoint/IEndpoint
   (start [this context]
     (let [pipeline (async/pipeline-blocking
@@ -162,12 +169,14 @@
       ;; Important: record request before sending it, so it is sure to be
       ;; available during receive-response.
       (swap! pending-requests* assoc id pending-request)
+      ;; respect back pressure from clients that are slow to read; (go (>!)) will not suffice
       (async/>!! sender req)
       pending-request))
   (send-notification [_this method body]
     (let [notif (json-rpc.messages/request method body)]
       (when trace? (trace-sending-notification method notif))
-      (async/put! sender notif)))
+      ;; respect back pressure from clients that are slow to read; (go (>!)) will not suffice
+      (async/>!! sender notif)))
   (receive-response [_this {:keys [id] :as resp}]
     (if-let [{:keys [id method p]} (get @pending-requests* id)]
       (do (when trace? (trace-received-response id method resp))
@@ -188,7 +197,7 @@
 
 (defn chan-server [{:keys [sender receiver parallelism trace?]
                     :or {parallelism 4, trace? false}}]
-  (map->Server
+  (map->ChanServer
     {:parallelism parallelism
      :trace? trace?
      :sender sender
