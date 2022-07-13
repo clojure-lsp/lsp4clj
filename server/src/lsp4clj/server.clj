@@ -1,6 +1,7 @@
 (ns lsp4clj.server
   (:require
    [clojure.core.async :as async]
+   [clojure.pprint :as pprint]
    [lsp4clj.json-rpc :as json-rpc]
    [lsp4clj.json-rpc.messages :as json-rpc.messages]
    [lsp4clj.protocols.endpoint :as protocols.endpoint]
@@ -49,6 +50,10 @@
         (protocols.endpoint/send-notification server "$/cancelRequest" {:id id})
         (deliver p ::cancelled)
         true))))
+
+;; Avoid error: java.lang.IllegalArgumentException: Multiple methods in multimethod 'simple-dispatch' match dispatch value: class lsp4clj.server.PendingRequest -> interface clojure.lang.IPersistentMap and interface clojure.lang.IDeref, and neither is preferred
+;; Only when CIDER is running? See https://github.com/thi-ng/color/issues/10
+(prefer-method pprint/simple-dispatch clojure.lang.IDeref clojure.lang.IPersistentMap)
 
 (defn pending-request
   "Returns an object representing a pending JSON-RPC request to a remote
