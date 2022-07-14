@@ -4,7 +4,12 @@
 
 ## v1.0.0
 
-- Remove lsp4j
+- Remove lsp4j, as per https://github.com/clojure-lsp/lsp4clj/issues/8
+This is essentially a rewrite of lsp4clj. Users of lsp4clj v0.4.3 and earlier
+are encourage to upgrade. Bug fixes for these earlier versions will be
+considered, but the lsp4j-based version of this library will not receive
+long-term support. For an example of how to use the new version of the library,
+see https://github.com/clojure-lsp/clojure-lsp/pull/1117
 
 ## v0.4.3
 
