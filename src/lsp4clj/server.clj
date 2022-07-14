@@ -87,46 +87,46 @@
   (let [{:keys [code message]} (json-rpc.messages/error-codes error-code)]
     (format "%s: %s (%s)" description message code)))
 
+(defn ^:private message-type [server message]
+  (if (identical? :parse-error message)
+    (do (protocols.endpoint/log server :error (format-error-code "Error reading message" :parse-error))
+        nil)
+    (let [conformed-message (s/conform ::coercer/json-rpc.input message)]
+      (if (= ::s/invalid conformed-message)
+        (do (protocols.endpoint/log server :error (format-error-code "Error interpreting message" :invalid-request))
+            nil)
+        (first conformed-message)))))
+
 (defn ^:private receive-message
   [server context message]
-  (cond
-    (identical? :parse-error message)
-    (protocols.endpoint/log server :error (format-error-code "Error reading message" :parse-error))
-    (not (s/valid? ::coercer/json-rpc.input message))
-    (protocols.endpoint/log server :error (format-error-code "Error interpreting message" :invalid-request))
-    :else
-    (let [[message-type _] (s/conform ::coercer/json-rpc.input message)]
-      (try
-        (case message-type
-          :request
-          (protocols.endpoint/receive-request server context message)
-          (:response.result :response.error)
-          (do (protocols.endpoint/receive-response server message)
-              ;; Ensure server doesn't respond to responses
-              nil)
-          :notification
-          (do (protocols.endpoint/receive-notification server context message)
-              ;; Ensure server doesn't respond to notifications
-              nil))
-        (catch Throwable e
-          (let [message-basics (select-keys message [:id :method])]
-            (protocols.endpoint/log server :error e (str (format-error-code "Error receiving message" :internal-error) "\n"
-                                                         message-basics))
-            (when (identical? :request message-type)
-              (json-rpc.messages/response (:id message)
-                                          (json-rpc.messages/standard-error-result :internal-error message-basics)))))))))
+  (when-let [message-type (message-type server message)]
+    (try
+      (case message-type
+        :request
+        (protocols.endpoint/receive-request server context message)
+        (:response.result :response.error)
+        (do (protocols.endpoint/receive-response server message)
+            ;; Ensure server doesn't respond to responses
+            nil)
+        :notification
+        (do (protocols.endpoint/receive-notification server context message)
+            ;; Ensure server doesn't respond to notifications
+            nil))
+      (catch Throwable e
+        (let [message-basics (select-keys message [:id :method])]
+          (protocols.endpoint/log server :error e (str (format-error-code "Error receiving message" :internal-error) "\n"
+                                                       message-basics))
+          (when (identical? :request message-type)
+            (->> message-basics
+                 (json-rpc.messages/standard-error-result :internal-error)
+                 (json-rpc.messages/response (:id message)))))))))
 
 ;; Expose endpoint methods to language servers
 
-#_{:clj-kondo/ignore [:clojure-lsp/unused-public-var]}
 (def start protocols.endpoint/start)
-#_{:clj-kondo/ignore [:clojure-lsp/unused-public-var]}
 (def shutdown protocols.endpoint/shutdown)
-#_{:clj-kondo/ignore [:clojure-lsp/unused-public-var]}
 (def exit protocols.endpoint/exit)
-#_{:clj-kondo/ignore [:clojure-lsp/unused-public-var]}
 (def send-request protocols.endpoint/send-request)
-#_{:clj-kondo/ignore [:clojure-lsp/unused-public-var]}
 (def send-notification protocols.endpoint/send-notification)
 
 ;; Let language servers implement their own message receivers. These are
