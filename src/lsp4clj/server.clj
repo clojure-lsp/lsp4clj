@@ -199,8 +199,7 @@
   (receive-response [_this {:keys [id] :as resp}]
     (let [now (.instant clock)]
       (if-let [{:keys [id method p started]} (get @pending-requests* id)]
-        (let [error (:error resp)
-              result (:result resp)]
+        (let [{:keys [error result]} resp]
           (some-> trace-ch (async/put! (trace/received-response id method result error started now)))
           (swap! pending-requests* dissoc id)
           (deliver p (if error resp result)))
