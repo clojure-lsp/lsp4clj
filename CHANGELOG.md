@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+## v1.0.0
+
+- Remove lsp4j
+
 ## v0.4.3
 
 ## v0.4.2
