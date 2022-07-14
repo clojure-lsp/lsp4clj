@@ -152,8 +152,8 @@
         ;; wait for pipeline to close, indicating input closed
         (async/<! pipeline)
         (deliver join :done)))
-    ;; invokers should deref the return of `start`, so the server stays alive
-    ;; until it is shut down
+    ;; invokers can deref the return of `start` to stay alive until server is
+    ;; shut down
     join)
   (shutdown [_this]
     ;; closing input will drain pipeline, then close output, then close
