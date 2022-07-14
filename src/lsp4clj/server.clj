@@ -10,6 +10,19 @@
 
 (set! *warn-on-reflection* true)
 
+(def null-output-stream-writer
+  (java.io.OutputStreamWriter.
+    (proxy [java.io.OutputStream] []
+      (write
+        ([^bytes b])
+        ([^bytes b, off, len])))))
+
+(defmacro discarding-stdout
+  "Evaluates body in a context in which writes to *out* are discarded."
+  [& body]
+  `(binding [*out* null-output-stream-writer]
+     ~@body))
+
 (defprotocol IBlockingDerefOrCancel
   (deref-or-cancel [this timeout-ms timeout-val]))
 
@@ -91,15 +104,16 @@
   (let [message-type (coercer/input-message-type message)]
     (try
       (let [response
-            (case message-type
-              (:parse-error :invalid-request)
-              (protocols.endpoint/log server :error (format-error-code "Error reading message" message-type))
-              :request
-              (protocols.endpoint/receive-request server context message)
-              (:response.result :response.error)
-              (protocols.endpoint/receive-response server message)
-              :notification
-              (protocols.endpoint/receive-notification server context message))]
+            (discarding-stdout
+              (case message-type
+                (:parse-error :invalid-request)
+                (protocols.endpoint/log server :error (format-error-code "Error reading message" message-type))
+                :request
+                (protocols.endpoint/receive-request server context message)
+                (:response.result :response.error)
+                (protocols.endpoint/receive-response server message)
+                :notification
+                (protocols.endpoint/receive-notification server context message)))]
         ;; Ensure server only responds to requests
         (when (identical? :request message-type)
           response))
