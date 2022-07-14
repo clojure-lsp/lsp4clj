@@ -37,12 +37,12 @@
             charset)))
       "utf-8"))
 
-(defn ^:private read-message [input headers]
+(defn ^:private read-message [input headers keyword-function]
   (try
     (let [content-length (parse-long (get headers "Content-Length"))
           charset-s (parse-charset (get headers "Content-Type"))
           content (read-n-chars input content-length charset-s)]
-      (json/parse-string content csk/->kebab-case-keyword))
+      (json/parse-string content keyword-function))
     (catch Exception _
       :parse-error)))
 
@@ -77,8 +77,9 @@
   channel closes, will close the input, but can be determined by `close?`.
 
   Reads in a thread to avoid blocking a go block thread."
-  ([input] (input-stream->input-chan input true))
-  ([^java.io.InputStream input close?]
+  ([input] (input-stream->input-chan input {}))
+  ([^java.io.InputStream input {:keys [close? keyword-function]
+                                :or {close? true, keyword-function csk/->kebab-case-keyword}}]
    (let [msgs (async/chan 1)]
      (async/thread
        (loop [headers {}]
@@ -87,7 +88,7 @@
              ;; input closed; also close channel
              (= line ::eof)       (async/close! msgs)
              ;; a blank line after the headers indicates start of message
-             (string/blank? line) (if (async/>!! msgs (read-message input headers))
+             (string/blank? line) (if (async/>!! msgs (read-message input headers keyword-function))
                                     ;; wait for next message
                                     (recur {})
                                     ;; msgs closed
