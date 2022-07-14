@@ -420,6 +420,7 @@
         :invalid-request
         (first conformed-message)))))
 
+#_{:clj-kondo/ignore [:clojure-lsp/unused-public-var]}
 (defn conform-or-log [log spec value]
   (when value
     (try

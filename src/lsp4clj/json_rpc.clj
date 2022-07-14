@@ -8,8 +8,7 @@
    [cheshire.core :as json]
    [clojure.core.async :as async]
    [clojure.java.io :as io]
-   [clojure.string :as string]
-   [lsp4clj.json-rpc.messages :as json-rpc.messages]))
+   [clojure.string :as string]))
 
 (set! *warn-on-reflection* true)
 
