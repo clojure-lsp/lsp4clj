@@ -109,7 +109,7 @@
               nil))
         (catch Throwable e
           (let [message-basics (select-keys message [:id :method])]
-            (protocols.endpoint/log server :error e (str (format-error-code  "Error receiving message" :internal-error) "\n"
+            (protocols.endpoint/log server :error e (str (format-error-code "Error receiving message" :internal-error) "\n"
                                                          message-basics))
             (when (identical? :request message-type)
               (json-rpc.messages/response (:id message)
