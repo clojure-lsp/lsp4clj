@@ -129,8 +129,7 @@
 (defmethod receive-request :default [_method _context _params] ::method-not-found)
 (defmethod receive-notification :default [_method _context _params] ::method-not-found)
 
-(defrecord ChanServer [parallelism
-                       input
+(defrecord ChanServer [input
                        output
                        trace-ch
                        log-ch
@@ -141,7 +140,7 @@
   protocols.endpoint/IEndpoint
   (start [this context]
     (let [pipeline (async/pipeline-blocking
-                     parallelism
+                     1
                      output
                      ;; TODO: return error until initialize request is received? https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification/#initialize
                      ;; `keep` means we do not reply to responses and notifications
@@ -210,11 +209,10 @@
     (when (identical? ::method-not-found (receive-notification method context params))
       (protocols.endpoint/log this :warn "received unexpected notification" method))))
 
-(defn chan-server [{:keys [output input parallelism trace? clock]
-                    :or {parallelism 4, trace? false, clock (java.time.Clock/systemDefaultZone)}}]
+(defn chan-server [{:keys [output input trace? clock]
+                    :or {trace? false, clock (java.time.Clock/systemDefaultZone)}}]
   (map->ChanServer
-    {:parallelism parallelism
-     :output output
+    {:output output
      :input input
      :trace-ch (when trace? (async/chan (async/sliding-buffer 20)))
      :log-ch (async/chan (async/sliding-buffer 20))
