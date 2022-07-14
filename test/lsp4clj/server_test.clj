@@ -510,7 +510,7 @@
         log-ch (:log-ch server)
         join (server/start server nil)]
     (async/put! input {:jsonrpc "1.0"})
-    (is (= [:error "Error interpreting message: Invalid Request (-32600)"]
+    (is (= [:error "Error reading message: Invalid Request (-32600)"]
            (h/assert-take log-ch)))
     (server/shutdown server)
     (server/exit server)

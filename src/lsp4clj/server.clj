@@ -2,7 +2,6 @@
   (:require
    [clojure.core.async :as async]
    [clojure.pprint :as pprint]
-   [clojure.spec.alpha :as s]
    [lsp4clj.coercer :as coercer]
    [lsp4clj.json-rpc :as json-rpc]
    [lsp4clj.json-rpc.messages :as json-rpc.messages]
@@ -87,31 +86,23 @@
   (let [{:keys [code message]} (json-rpc.messages/error-codes error-code)]
     (format "%s: %s (%s)" description message code)))
 
-(defn ^:private message-type [server message]
-  (if (identical? :parse-error message)
-    (do (protocols.endpoint/log server :error (format-error-code "Error reading message" :parse-error))
-        nil)
-    (let [conformed-message (s/conform ::coercer/json-rpc.input message)]
-      (if (= ::s/invalid conformed-message)
-        (do (protocols.endpoint/log server :error (format-error-code "Error interpreting message" :invalid-request))
-            nil)
-        (first conformed-message)))))
-
 (defn ^:private receive-message
   [server context message]
-  (when-let [message-type (message-type server message)]
+  (let [message-type (coercer/input-message-type message)]
     (try
-      (case message-type
-        :request
-        (protocols.endpoint/receive-request server context message)
-        (:response.result :response.error)
-        (do (protocols.endpoint/receive-response server message)
-            ;; Ensure server doesn't respond to responses
-            nil)
-        :notification
-        (do (protocols.endpoint/receive-notification server context message)
-            ;; Ensure server doesn't respond to notifications
-            nil))
+      (let [response
+            (case message-type
+              (:parse-error :invalid-request)
+              (protocols.endpoint/log server :error (format-error-code "Error reading message" message-type))
+              :request
+              (protocols.endpoint/receive-request server context message)
+              (:response.result :response.error)
+              (protocols.endpoint/receive-response server message)
+              :notification
+              (protocols.endpoint/receive-notification server context message))]
+        ;; Ensure server only responds to requests
+        (when (identical? :request message-type)
+          response))
       (catch Throwable e
         (let [message-basics (select-keys message [:id :method])]
           (protocols.endpoint/log server :error e (str (format-error-code "Error receiving message" :internal-error) "\n"

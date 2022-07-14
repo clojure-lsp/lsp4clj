@@ -412,11 +412,19 @@
         :response.result ::json-rpc.response.result
         :response.error ::json-rpc.response.error))
 
+(defn input-message-type [message]
+  (if (identical? :parse-error message)
+    :parse-error
+    (let [conformed-message (s/conform ::json-rpc.input message)]
+      (if (identical? ::s/invalid conformed-message)
+        :invalid-request
+        (first conformed-message)))))
+
 (defn conform-or-log [log spec value]
   (when value
     (try
       (let [result (s/conform spec value)]
-        (if (= :clojure.spec.alpha/invalid result)
+        (if (identical? ::s/invalid result)
           (log "Conformation error" (s/explain-data spec value))
           result))
       (catch Exception ex
