@@ -68,7 +68,7 @@
         req (server/send-request server "req" {:body "foo"})
         client-rcvd-msg (h/assert-take output)]
     (async/put! input (messages/response (:id client-rcvd-msg) {:processed true}))
-    (is (= {:processed true} @req))
+    (is (= {:processed true} (server/deref-or-cancel req 100 :test-timeout)))
     (server/shutdown server)
     (server/exit server)
     @join))

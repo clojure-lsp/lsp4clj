@@ -3,6 +3,7 @@
    [clojure.core.async :as async]
    [clojure.pprint :as pprint]
    [clojure.spec.alpha :as s]
+   [lsp4clj.coercer :as coercer]
    [lsp4clj.json-rpc :as json-rpc]
    [lsp4clj.json-rpc.messages :as json-rpc.messages]
    [lsp4clj.protocols.endpoint :as protocols.endpoint]
@@ -91,10 +92,10 @@
   (cond
     (identical? :parse-error message)
     (protocols.endpoint/log server :error (format-error-code "Error reading message" :parse-error))
-    (not (s/valid? :json-rpc.message/input message))
+    (not (s/valid? ::coercer/json-rpc.input message))
     (protocols.endpoint/log server :error (format-error-code "Error interpreting message" :invalid-request))
     :else
-    (let [[message-type _] (s/conform :json-rpc.message/input message)]
+    (let [[message-type _] (s/conform ::coercer/json-rpc.input message)]
       (try
         (case message-type
           :request

@@ -388,29 +388,29 @@
 (s/def :json-rpc.message/id (s/and (s/or :s string? :i nat-int? :n nil?)
                                    (s/conformer second)))
 
-(s/def :json-rpc.message/request
+(s/def ::json-rpc.request
   (s/keys :req-un [:json-rpc.message/jsonrpc
                    :json-rpc.message/id
                    :json-rpc.message/method]
           :opt-un [:json-rpc.message/params]))
-(s/def :json-rpc.message/notification
+(s/def ::json-rpc.notification
   (s/keys :req-un [:json-rpc.message/jsonrpc
                    :json-rpc.message/method]
           :opt-un [:json-rpc.message/params]))
-(s/def :json-rpc.message/response.result
+(s/def ::json-rpc.response.result
   (s/keys :req-un [:json-rpc.message/jsonrpc
                    :json-rpc.message/id
                    :json-rpc.message/result]))
-(s/def :json-rpc.message/response.error
+(s/def ::json-rpc.response.error
   (s/keys :req-un [:json-rpc.message/jsonrpc
                    :json-rpc.message/id
                    ::error]))
 
-(s/def :json-rpc.message/input
-  (s/or :request :json-rpc.message/request
-        :notification :json-rpc.message/notification
-        :response.result :json-rpc.message/response.result
-        :response.error :json-rpc.message/response.error))
+(s/def ::json-rpc.input
+  (s/or :request ::json-rpc.request
+        :notification ::json-rpc.notification
+        :response.result ::json-rpc.response.result
+        :response.error ::json-rpc.response.error))
 
 (defn conform-or-log [log spec value]
   (when value
