@@ -90,9 +90,9 @@
   [server context message]
   (cond
     (identical? :parse-error message)
-    (protocols.endpoint/log server [:error (format-error-code "Error reading message" :parse-error)])
+    (protocols.endpoint/log server :error (format-error-code "Error reading message" :parse-error))
     (not (s/valid? :json-rpc.message/input message))
-    (protocols.endpoint/log server [:error (format-error-code "Error interpreting message" :invalid-request)])
+    (protocols.endpoint/log server :error (format-error-code "Error interpreting message" :invalid-request))
     :else
     (let [[message-type _] (s/conform :json-rpc.message/input message)]
       (try
@@ -109,10 +109,8 @@
               nil))
         (catch Throwable e
           (let [message-basics (select-keys message [:id :method])]
-            (protocols.endpoint/log
-              server
-              [:error e (str (format-error-code  "Error receiving message" :internal-error) "\n"
-                             message-basics)])
+            (protocols.endpoint/log server :error e (str (format-error-code  "Error receiving message" :internal-error) "\n"
+                                                         message-basics))
             (when (identical? :request message-type)
               (json-rpc.messages/response (:id message)
                                           (json-rpc.messages/standard-error-result :internal-error message-basics)))))))))
@@ -171,8 +169,10 @@
     (async/close! input)
     (deref join 10e3 :timeout))
   (exit [_this])
-  (log [_this log]
-    (async/put! log-ch log))
+  (log [_this level arg1]
+    (async/put! log-ch [level arg1]))
+  (log [_this level arg1 arg2]
+    (async/put! log-ch [level arg1 arg2]))
   (send-request [this method body]
     (let [id (swap! request-id* inc)
           now (.instant clock)
@@ -206,7 +206,7 @@
       (let [result (let [result (receive-request method context params)]
                      (if (identical? ::method-not-found result)
                        (do
-                         (protocols.endpoint/log this [:warn "received unexpected request" method])
+                         (protocols.endpoint/log this :warn "received unexpected request" method)
                          (json-rpc.messages/standard-error-result :method-not-found {:method method}))
                        result))
             resp (json-rpc.messages/response id result)
@@ -216,7 +216,7 @@
   (receive-notification [this context {:keys [method params]}]
     (some-> trace-ch (async/put! (trace/received-notification method params (.instant clock))))
     (when (identical? ::method-not-found (receive-notification method context params))
-      (protocols.endpoint/log this [:warn "received unexpected notification" method]))))
+      (protocols.endpoint/log this :warn "received unexpected notification" method))))
 
 (defn chan-server [{:keys [output input parallelism trace? clock]
                     :or {parallelism 4, trace? false, clock (java.time.Clock/systemDefaultZone)}}]
