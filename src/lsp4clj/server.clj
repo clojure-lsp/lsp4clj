@@ -154,7 +154,7 @@
   protocols.endpoint/IEndpoint
   (start [this context]
     (let [pipeline (async/pipeline-blocking
-                     1
+                     1 ;; no parallelism, to preserve order of client messages
                      output
                      ;; TODO: return error until initialize request is received? https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification/#initialize
                      ;; `keep` means we do not reply to responses and notifications
