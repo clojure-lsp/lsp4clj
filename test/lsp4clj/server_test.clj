@@ -367,10 +367,7 @@
   (let [input (async/chan 3)
         output (async/chan 3)
         server (server/chan-server {:output output
-                                    :input input
-
-                                    :trace? true
-                                    :clock fixed-clock})
+                                    :input input})
         log-ch (:log-ch server)]
     (server/start server nil)
     (async/put! input :parse-error)
@@ -382,10 +379,7 @@
   (let [input (async/chan 3)
         output (async/chan 3)
         server (server/chan-server {:output output
-                                    :input input
-
-                                    :trace? true
-                                    :clock fixed-clock})
+                                    :input input})
         log-ch (:log-ch server)]
     (server/start server nil)
     (with-redefs [server/receive-request (fn [& _args]
@@ -407,10 +401,7 @@
   (let [input (async/chan 3)
         output (async/chan 3)
         server (server/chan-server {:output output
-                                    :input input
-
-                                    :trace? true
-                                    :clock fixed-clock})
+                                    :input input})
         log-ch (:log-ch server)]
     (server/start server nil)
     (with-redefs [server/receive-notification (fn [& _args]
@@ -427,10 +418,7 @@
   (let [input (async/chan 3)
         output (async/chan 3)
         server (server/chan-server {:output output
-                                    :input input
-
-                                    :trace? true
-                                    :clock fixed-clock})
+                                    :input input})
         log-ch (:log-ch server)]
     (server/start server nil)
     (async/put! input {:jsonrpc "1.0"})
