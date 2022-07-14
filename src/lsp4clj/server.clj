@@ -116,7 +116,6 @@
 
 (def start protocols.endpoint/start)
 (def shutdown protocols.endpoint/shutdown)
-(def exit protocols.endpoint/exit)
 (def send-request protocols.endpoint/send-request)
 (def send-notification protocols.endpoint/send-notification)
 
@@ -162,7 +161,6 @@
     (async/close! log-ch)
     (some-> trace-ch async/close!)
     (deref join 10e3 :timeout))
-  (exit [_this])
   (log [_this level arg1]
     (async/put! log-ch [level arg1]))
   (log [_this level arg1 arg2]

@@ -3,7 +3,6 @@
 (defprotocol IEndpoint
   (start [this context])
   (shutdown [this])
-  (exit [this])
   (log [this level arg1] [this level arg1 arg2])
   (send-request [this method body])
   (send-notification [this method body])
