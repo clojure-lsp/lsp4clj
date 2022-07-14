@@ -159,6 +159,8 @@
     ;; closing input will drain pipeline, then close output, then close
     ;; pipeline
     (async/close! input)
+    (async/close! log-ch)
+    (some-> trace-ch async/close!)
     (deref join 10e3 :timeout))
   (exit [_this])
   (log [_this level arg1]
