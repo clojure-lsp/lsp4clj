@@ -20,7 +20,11 @@
 
 (def error-codes
   {;; JSON-RPC errors
+   ;; Is parse-error possible? How could you reply to a request if you weren't
+   ;; able to parse it?
    :parse-error      {:code -32700, :message "Parse error"}
+   ;; Similarly for invalid-request? How could you reply to a request if it
+   ;; doesn't look like a request?
    :invalid-request  {:code -32600, :message "Invalid Request"}
    :method-not-found {:code -32601, :message "Method not found"}
    :invalid-params   {:code -32602, :message "Invalid params"}
@@ -34,15 +38,15 @@
    :content-modified       {:code -32801, :message "Content modified"}
    :request-cancelled      {:code -32800, :message "Request cancelled"}})
 
-(defn error-response [code-or-name message data]
+(defn error-result [code-or-name message data]
   (let [default (get error-codes code-or-name)]
     {:error (cond-> {:code (if default (:code default) code-or-name)
                      :message (or message (:message default))}
               data (assoc :data data))}))
 
-(defn standard-error-response
+(defn standard-error-result
   [code-name data]
-  (error-response code-name nil data))
+  (error-result code-name nil data))
 
 #_{:clj-kondo/ignore [:clojure-lsp/unused-public-var]}
 (defn work-done-progress [percentage message progress-token]

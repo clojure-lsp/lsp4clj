@@ -2,10 +2,10 @@
   (:require
    [clojure.core.async :as async]
    [clojure.pprint :as pprint]
+   [clojure.spec.alpha :as s]
    [lsp4clj.json-rpc :as json-rpc]
    [lsp4clj.json-rpc.messages :as json-rpc.messages]
    [lsp4clj.protocols.endpoint :as protocols.endpoint]
-   [lsp4clj.protocols.logger :as logger]
    [lsp4clj.trace :as trace]))
 
 (set! *warn-on-reflection* true)
@@ -82,23 +82,40 @@
                         :started started
                         :server server}))
 
+(defn ^:private format-error-code [description error-code]
+  (let [{:keys [code message]} (json-rpc.messages/error-codes error-code)]
+    (format "%s: %s (%s)" description message code)))
+
 (defn ^:private receive-message
   [server context message]
-  (if-let [{:keys [id method] :as json} message]
-    (try
-      (cond
-        (and id method) (protocols.endpoint/receive-request server context json)
-        id              (do (protocols.endpoint/receive-response server json)
-                            ;; Ensure server doesn't respond to responses
-                            nil)
-        :else           (do (protocols.endpoint/receive-notification server context json)
-                            ;; Ensure server doesn't respond to notifications
-                            nil))
-      (catch Throwable e
-        ;; TODO: if this was a request, send a generic -32603 Internal error
-        (logger/debug e "exception receiving")))
-    ;; TODO: what does a nil message signify? What should we do with it?
-    (logger/debug "client closed? or json parse error?")))
+  (cond
+    (identical? :parse-error message)
+    (protocols.endpoint/log server [:error (format-error-code "Error reading message" :parse-error)])
+    (not (s/valid? :json-rpc.message/input message))
+    (protocols.endpoint/log server [:error (format-error-code "Error interpreting message" :invalid-request)])
+    :else
+    (let [[message-type _] (s/conform :json-rpc.message/input message)]
+      (try
+        (case message-type
+          :request
+          (protocols.endpoint/receive-request server context message)
+          (:response.result :response.error)
+          (do (protocols.endpoint/receive-response server message)
+              ;; Ensure server doesn't respond to responses
+              nil)
+          :notification
+          (do (protocols.endpoint/receive-notification server context message)
+              ;; Ensure server doesn't respond to notifications
+              nil))
+        (catch Throwable e
+          (let [message-basics (select-keys message [:id :method])]
+            (protocols.endpoint/log
+              server
+              [:error e (str (format-error-code  "Error receiving message" :internal-error) "\n"
+                             message-basics)])
+            (when (identical? :request message-type)
+              (json-rpc.messages/response (:id message)
+                                          (json-rpc.messages/standard-error-result :internal-error message-basics)))))))))
 
 ;; Expose endpoint methods to language servers
 
@@ -120,17 +137,14 @@
 (defmulti receive-request (fn [method _context _params] method))
 (defmulti receive-notification (fn [method _context _params] method))
 
-(defmethod receive-request :default [method _context _params]
-  (logger/debug "received unexpected request" method)
-  (json-rpc.messages/standard-error-response :method-not-found {:method method}))
-
-(defmethod receive-notification :default [method _context _params]
-  (logger/debug "received unexpected notification" method))
+(defmethod receive-request :default [_method _context _params] ::method-not-found)
+(defmethod receive-notification :default [_method _context _params] ::method-not-found)
 
 (defrecord ChanServer [parallelism
-                       trace-ch
                        input
                        output
+                       trace-ch
+                       log-ch
                        ^java.time.Clock clock
                        request-id*
                        pending-requests*
@@ -153,10 +167,12 @@
     join)
   (shutdown [_this]
     ;; closing input will drain pipeline, then close output, then close
-    ;; pipeline, then deliver join
+    ;; pipeline
     (async/close! input)
     (deref join 10e3 :timeout))
   (exit [_this])
+  (log [_this log]
+    (async/put! log-ch log))
   (send-request [this method body]
     (let [id (swap! request-id* inc)
           now (.instant clock)
@@ -184,17 +200,23 @@
           (swap! pending-requests* dissoc id)
           (deliver p (if error resp result)))
         (some-> trace-ch (async/put! (trace/received-unmatched-response now resp))))))
-  (receive-request [_this context {:keys [id method params]}]
+  (receive-request [this context {:keys [id method params]}]
     (let [started (.instant clock)]
       (some-> trace-ch (async/put! (trace/received-request id method params started)))
-      (let [result (receive-request method context params)
+      (let [result (let [result (receive-request method context params)]
+                     (if (identical? ::method-not-found result)
+                       (do
+                         (protocols.endpoint/log this [:warn "received unexpected request" method])
+                         (json-rpc.messages/standard-error-result :method-not-found {:method method}))
+                       result))
             resp (json-rpc.messages/response id result)
             finished (.instant clock)]
         (some-> trace-ch (async/put! (trace/sending-response id method result started finished)))
         resp)))
-  (receive-notification [_this context {:keys [method params]}]
+  (receive-notification [this context {:keys [method params]}]
     (some-> trace-ch (async/put! (trace/received-notification method params (.instant clock))))
-    (receive-notification method context params)))
+    (when (identical? ::method-not-found (receive-notification method context params))
+      (protocols.endpoint/log this [:warn "received unexpected notification" method]))))
 
 (defn chan-server [{:keys [output input parallelism trace? clock]
                     :or {parallelism 4, trace? false, clock (java.time.Clock/systemDefaultZone)}}]
@@ -203,6 +225,7 @@
      :output output
      :input input
      :trace-ch (when trace? (async/chan (async/sliding-buffer 20)))
+     :log-ch (async/chan (async/sliding-buffer 20))
      :clock clock
      :request-id* (atom 0)
      :pending-requests* (atom {})

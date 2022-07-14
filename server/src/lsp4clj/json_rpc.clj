@@ -8,7 +8,8 @@
    [cheshire.core :as json]
    [clojure.core.async :as async]
    [clojure.java.io :as io]
-   [clojure.string :as string]))
+   [clojure.string :as string]
+   [lsp4clj.json-rpc.messages :as json-rpc.messages]))
 
 (set! *warn-on-reflection* true)
 
@@ -37,14 +38,13 @@
       "utf-8"))
 
 (defn ^:private read-message [input headers]
-  (let [content-length (parse-long (get headers "Content-Length"))
-        charset-s (parse-charset (get headers "Content-Type"))
-        content (read-n-chars input content-length charset-s)]
-    ;; TODO: figure out how to signal errors to lsp4clj.server
-    ;; TODO: catch exceptions and return -32700 Parse error
-    ;; TODO: validate message conforms to JSON-RPC request object
-    ;; (jsonrpc/method/id/params) and return -32600 Invalid Request if not.
-    (json/parse-string content csk/->kebab-case-keyword)))
+  (try
+    (let [content-length (parse-long (get headers "Content-Length"))
+          charset-s (parse-charset (get headers "Content-Type"))
+          content (read-n-chars input content-length charset-s)]
+      (json/parse-string content csk/->kebab-case-keyword))
+    (catch Exception _
+      :parse-error)))
 
 (defn kw->camelCaseString
   "Convert keywords to camelCase strings, but preserve capitalization of things

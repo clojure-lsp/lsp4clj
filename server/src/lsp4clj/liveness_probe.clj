@@ -2,8 +2,7 @@
   (:require
    [clojure.core.async :as async]
    [clojure.java.shell :as shell]
-   [clojure.string :as string]
-   [lsp4clj.protocols.logger :as logger]))
+   [clojure.string :as string]))
 
 (defn ^:private windows-process-alive?
   [pid]
@@ -16,22 +15,22 @@
     (zero? exit)))
 
 (defn ^:private process-alive?
-  [pid]
+  [pid log]
   (try
     (if (.contains (System/getProperty "os.name") "Windows")
       (windows-process-alive? pid)
       (unix-process-alive? pid))
     (catch Exception e
-      (logger/warn "Liveness probe - Checking if process is alive failed." e)
+      (log :warn e "Liveness probe - Checking if process is alive failed.")
       true)))
 
 #_{:clj-kondo/ignore [:clojure-lsp/unused-public-var]}
 (defn start!
-  [ppid on-exit]
+  [ppid log on-exit]
   (async/go-loop []
     (async/<! (async/timeout 5000))
-    (if (process-alive? ppid)
+    (if (process-alive? ppid log)
       (recur)
       (do
-        (logger/info (str "Liveness probe - Parent process " ppid " is not running - exiting server"))
+        (log :info (str "Liveness probe - Parent process " ppid " is not running - exiting server"))
         (on-exit)))))

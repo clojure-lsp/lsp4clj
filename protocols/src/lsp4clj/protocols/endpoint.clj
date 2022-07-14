@@ -5,6 +5,7 @@
   (start [this context])
   (shutdown [this])
   (exit [this])
+  (log [this log])
   (send-request [this method body])
   (send-notification [this method body])
   (receive-response [this resp])

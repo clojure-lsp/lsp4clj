@@ -2,8 +2,7 @@
   (:require
    [clojure.set :as set]
    [clojure.spec.alpha :as s]
-   [lsp4clj.json-rpc.messages :as lsp.messages]
-   [lsp4clj.protocols.logger :as logger]))
+   [lsp4clj.json-rpc.messages :as lsp.messages]))
 
 (set! *warn-on-reflection* true)
 
@@ -25,7 +24,7 @@
 (s/def ::response-error (s/and (s/keys :req-un [::error])
                                (s/conformer
                                  (fn [{:keys [error]}]
-                                   (lsp.messages/error-response (:code error) (:message error) (:data error))))))
+                                   (lsp.messages/error-result (:code error) (:message error) (:data error))))))
 
 (s/def ::line (s/and integer? (s/conformer int)))
 (s/def ::character (s/and integer? (s/conformer int)))
@@ -384,12 +383,41 @@
                    :server-capabilities/signature-help-provider
                    :server-capabilities/text-document-sync]))
 
-(defn conform-or-log [spec value]
+(s/def :json-rpc.message/jsonrpc #{"2.0"})
+(s/def :json-rpc.message/method string?)
+(s/def :json-rpc.message/id (s/and (s/or :s string? :i nat-int? :n nil?)
+                                   (s/conformer second)))
+
+(s/def :json-rpc.message/request
+  (s/keys :req-un [:json-rpc.message/jsonrpc
+                   :json-rpc.message/id
+                   :json-rpc.message/method]
+          :opt-un [:json-rpc.message/params]))
+(s/def :json-rpc.message/notification
+  (s/keys :req-un [:json-rpc.message/jsonrpc
+                   :json-rpc.message/method]
+          :opt-un [:json-rpc.message/params]))
+(s/def :json-rpc.message/response.result
+  (s/keys :req-un [:json-rpc.message/jsonrpc
+                   :json-rpc.message/id
+                   :json-rpc.message/result]))
+(s/def :json-rpc.message/response.error
+  (s/keys :req-un [:json-rpc.message/jsonrpc
+                   :json-rpc.message/id
+                   ::error]))
+
+(s/def :json-rpc.message/input
+  (s/or :request :json-rpc.message/request
+        :notification :json-rpc.message/notification
+        :response.result :json-rpc.message/response.result
+        :response.error :json-rpc.message/response.error))
+
+(defn conform-or-log [log spec value]
   (when value
     (try
       (let [result (s/conform spec value)]
         (if (= :clojure.spec.alpha/invalid result)
-          (logger/error (s/explain-data spec value))
+          (log "Conformation error" (s/explain-data spec value))
           result))
       (catch Exception ex
-        (logger/error ex spec value)))))
+        (log "Conformation exception" ex spec value)))))

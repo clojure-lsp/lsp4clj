@@ -3,6 +3,7 @@
    [clojure.core.async :as async]
    [clojure.string :as string]
    [clojure.test :refer [deftest is testing]]
+   [lsp4clj.json-rpc.messages :as messages]
    [lsp4clj.server :as server]
    [lsp4clj.test-helper :as h]))
 
@@ -12,7 +13,7 @@
         server (server/chan-server {:output output
                                     :input input
                                     :parallelism 1})]
-    (async/put! input {:id 1 :method "foo" :params {}})
+    (async/put! input (messages/request 1 "foo" {}))
     (let [join (server/start server nil)]
       (h/assert-take output)
       (server/shutdown server)
@@ -26,9 +27,7 @@
                                     :input input
                                     :parallelism 1})
         join (server/start server nil)]
-    (async/put! input {:id 2
-                       :method "bar"
-                       :params {}})
+    (async/put! input (messages/request 2 "bar" {}))
     (server/shutdown server)
     (server/exit server)
     (h/assert-take output)
@@ -68,8 +67,7 @@
         join (server/start server nil)
         req (server/send-request server "req" {:body "foo"})
         client-rcvd-msg (h/assert-take output)]
-    (async/put! input {:id (:id client-rcvd-msg)
-                       :result {:processed true}})
+    (async/put! input (messages/response (:id client-rcvd-msg) {:processed true}))
     (is (= {:processed true} @req))
     (server/shutdown server)
     (server/exit server)
@@ -82,7 +80,7 @@
                                     :input input
                                     :parallelism 1})
         join (server/start server nil)]
-    (async/put! input {:id 1 :method "foo" :params {}})
+    (async/put! input (messages/request 1 "foo" {}))
     (is (= 1 (:id (h/assert-take output))))
     (server/shutdown server)
     (server/exit server)
@@ -95,7 +93,7 @@
                                     :input input
                                     :parallelism 1})
         join (server/start server nil)]
-    (async/put! input {:id 1 :method "foo" :params {}})
+    (async/put! input (messages/request 1 "foo" {}))
     (is (= {:jsonrpc "2.0"
             :id 1
             :error {:code -32601, :message "Method not found", :data {:method "foo"}}}
@@ -130,8 +128,7 @@
         join (server/start server nil)
         req (server/send-request server "req" {:body "foo"})
         client-rcvd-msg (h/assert-take output)]
-    (async/put! input {:id (:id client-rcvd-msg)
-                       :result {:processed true}})
+    (async/put! input (messages/response (:id client-rcvd-msg) {:processed true}))
     (is (= {:processed true} (server/deref-or-cancel req 1000 :test-timeout)))
     (h/assert-no-take output)
     (is (not (future-cancel req)))
@@ -180,8 +177,7 @@
           join (server/start server nil)
           req (server/send-request server "req" {:body "foo"})
           client-rcvd-msg (h/assert-take output)]
-      (async/put! input {:id (:id client-rcvd-msg)
-                         :result {:processed true}})
+      (async/put! input (messages/response (:id client-rcvd-msg) {:processed true}))
       (is (= {:processed true} (server/deref-or-cancel req 1000 :test-timeout)))
       (is (realized? req))
       (is (future-done? req))
@@ -228,8 +224,7 @@
           join (server/start server nil)
           req (server/send-request server "req" {:body "foo"})
           client-rcvd-msg (h/assert-take output)]
-      (async/put! input {:id (:id client-rcvd-msg)
-                         :result {:processed true}})
+      (async/put! input (messages/response (:id client-rcvd-msg) {:processed true}))
       (is (= {:processed true} (.get req 100 java.util.concurrent.TimeUnit/MILLISECONDS)))
       (server/shutdown server)
       (server/exit server)
@@ -267,7 +262,7 @@
                                     :clock fixed-clock})
         trace-ch (:trace-ch server)
         join (server/start server nil)]
-    (async/put! input {:method "foo" :params {:result "body"}})
+    (async/put! input (messages/request "foo" {:result "body"}))
     (is (= (trace-str ["[Trace - 2022-03-05T13:35:23Z] Received notification 'foo'"
                        "Params: {"
                        "  \"result\" : \"body\""
@@ -287,7 +282,7 @@
                                     :clock fixed-clock})
         trace-ch (:trace-ch server)
         join (server/start server nil)]
-    (async/put! input {:id 1 :method "foo" :params {:result "body"}})
+    (async/put! input (messages/request 1 "foo" {:result "body"}))
     (is (= (trace-str ["[Trace - 2022-03-05T13:35:23Z] Received request 'foo - (1)'"
                        "Params: {"
                        "  \"result\" : \"body\""
@@ -325,8 +320,7 @@
                        "  \"body\" : \"foo\""
                        "}"])
            (h/assert-take trace-ch)))
-    (async/put! input {:id (:id client-rcvd-msg)
-                       :result {:processed true}})
+    (async/put! input (messages/response (:id client-rcvd-msg) {:processed true}))
     (is (= (trace-str ["[Trace - 2022-03-05T13:35:23Z] Received response 'req - (1)' in 0ms."
                        "Result: {"
                        "  \"processed\" : true"
@@ -353,8 +347,9 @@
                        "  \"body\" : \"foo\""
                        "}"])
            (h/assert-take trace-ch)))
-    (async/put! input {:id (:id client-rcvd-msg)
-                       :error {:code 1234 :message "Something bad" :data {:body "foo"}}})
+    (async/put! input
+                (messages/response (:id client-rcvd-msg)
+                                   {:error {:code 1234 :message "Something bad" :data {:body "foo"}}}))
     (is (= (trace-str ["[Trace - 2022-03-05T13:35:23Z] Received response 'req - (1)' in 0ms. Request failed: Something bad (1234)."
                        "Error data: {"
                        "  \"body\" : \"foo\""
@@ -374,16 +369,15 @@
                                     :clock fixed-clock})
         trace-ch (:trace-ch server)
         join (server/start server nil)]
-    (async/put! input {:id 100
-                       :result {:processed true}})
+    (async/put! input (messages/response 100 {:processed true}))
     (is (= (trace-str ["[Trace - 2022-03-05T13:35:23Z] Received response for unmatched request:"
                        "Body: {"
+                       "  \"jsonrpc\" : \"2.0\","
                        "  \"id\" : 100,"
                        "  \"result\" : {"
                        "    \"processed\" : true"
                        "  }"
-                       "}"
-                       ])
+                       "}"])
            (h/assert-take trace-ch)))
     (server/shutdown server)
     (server/exit server)
@@ -405,6 +399,119 @@
                        "  \"body\" : \"foo\""
                        "}"])
            (h/assert-take trace-ch)))
+    (server/shutdown server)
+    (server/exit server)
+    @join))
+
+(deftest should-log-unexpected-requests
+  (let [input (async/chan 3)
+        output (async/chan 3)
+        server (server/chan-server {:output output
+                                    :input input
+                                    :parallelism 1})
+        log-ch (:log-ch server)
+        join (server/start server nil)]
+    (async/put! input (messages/request 1 "foo" {}))
+    (is (= [:warn "received unexpected request" "foo"]
+           (h/assert-take log-ch)))
+    (server/shutdown server)
+    (server/exit server)
+    @join))
+
+(deftest should-log-unexpected-notifications
+  (let [input (async/chan 3)
+        output (async/chan 3)
+        server (server/chan-server {:output output
+                                    :input input
+                                    :parallelism 1})
+        log-ch (:log-ch server)
+        join (server/start server nil)]
+    (async/put! input (messages/request "foo" {}))
+    (is (= [:warn "received unexpected notification" "foo"]
+           (h/assert-take log-ch)))
+    (server/shutdown server)
+    (server/exit server)
+    @join))
+
+(deftest should-log-parse-errors
+  (let [input (async/chan 3)
+        output (async/chan 3)
+        server (server/chan-server {:output output
+                                    :input input
+                                    :parallelism 1
+                                    :trace? true
+                                    :clock fixed-clock})
+        log-ch (:log-ch server)
+        join (server/start server nil)]
+    (async/put! input :parse-error)
+    (is (= [:error "Error reading message: Parse error (-32700)"]
+           (h/assert-take log-ch)))
+    (server/shutdown server)
+    (server/exit server)
+    @join))
+
+(deftest should-log-and-respond-to-internal-errors-during-requests
+  (let [input (async/chan 3)
+        output (async/chan 3)
+        server (server/chan-server {:output output
+                                    :input input
+                                    :parallelism 1
+                                    :trace? true
+                                    :clock fixed-clock})
+        log-ch (:log-ch server)
+        join (server/start server nil)]
+    (with-redefs [server/receive-request (fn [& _args]
+                                           (throw (ex-info "internal error" {:redef :data})))]
+      (async/put! input (messages/request 1 "foo" {}))
+      (is (= {:jsonrpc "2.0",
+              :id 1,
+              :error {:code -32603,
+                      :message "Internal error",
+                      :data {:id 1, :method "foo"}}}
+             (h/assert-take output))))
+    (let [[level e message] (h/assert-take log-ch)]
+      (is (= :error level))
+      (is (= {:redef :data} (ex-data e)))
+      (is (= "Error receiving message: Internal error (-32603)\n{:id 1, :method \"foo\"}" message)))
+    (server/shutdown server)
+    (server/exit server)
+    @join))
+
+(deftest should-log-internal-errors-during-notifications
+  (let [input (async/chan 3)
+        output (async/chan 3)
+        server (server/chan-server {:output output
+                                    :input input
+                                    :parallelism 1
+                                    :trace? true
+                                    :clock fixed-clock})
+        log-ch (:log-ch server)
+        join (server/start server nil)]
+    (with-redefs [server/receive-notification (fn [& _args]
+                                                (throw (ex-info "internal error" {:redef :data})))]
+      (async/put! input (messages/request "foo" {}))
+      (h/assert-no-take output))
+    (let [[level e message] (h/assert-take log-ch)]
+      (is (= :error level))
+      (is (= {:redef :data} (ex-data e)))
+      (is (= "Error receiving message: Internal error (-32603)\n{:method \"foo\"}" message)))
+    (server/shutdown server)
+    (server/exit server)
+    @join))
+
+(deftest should-log-malformed-messages
+  (let [input (async/chan 3)
+        output (async/chan 3)
+        server (server/chan-server {:output output
+                                    :input input
+                                    :parallelism 1
+                                    :trace? true
+                                    :clock fixed-clock})
+        log-ch (:log-ch server)
+        join (server/start server nil)]
+    (async/put! input {:jsonrpc "1.0"})
+    (is (= [:error "Error interpreting message: Invalid Request (-32600)"]
+           (h/assert-take log-ch)))
     (server/shutdown server)
     (server/exit server)
     @join))
