@@ -31,14 +31,14 @@ To receive messages from a client, lsp4clj defines a pair of multimethods, `lsp4
 
 Server implementors should create `defmethod`s for the messages they want to process. (Other methods will be logged and responded to with a generic "Method not found" response.)
 
-These defmethods receive 3 arguments, the method name, a "context", and the `params` of the [JSON-RPC request or notification object](https://www.jsonrpc.org/specification#request_object). The params will have been converted to kebab-case keywords. Read on for an explanation of what a "context" is and how to set it.
+These defmethods receive 3 arguments, the method name, a "context", and the `params` of the [JSON-RPC request or notification object](https://www.jsonrpc.org/specification#request_object). The keys of the params will have been converted (recursively) to kebab-case keywords. Read on for an explanation of what a "context" is and how to set it.
 
 ```clojure
 ;; a notification; return value is ignored
 (defmethod lsp4clj.server/receive-notification "textDocument/didOpen" [_ context {:keys [text-document]}]
   (handler/did-open context (:uri text-document) (:text text-document))
   
-;; a request; return value is convert to a response
+;; a request; return value is converted to a response
 (defmethod lsp4clj.server/receive-request "textDocument/definition" [_ context params]
   (->> params
        (handler/definition context)
@@ -73,19 +73,23 @@ Sending a request is similar, with `lsp4clj.server/send-request`. This method re
 
 ### Start and stop a server
 
-The last step is to start the server you created earlier. Use `lsp4clj.server/start`. This method accepts two arguments, the server and a "context". Whatever you provide for the context will be passed into the notification and request `defmethods` you defined earlier. This is a convenient way to make components of your system available to those methods without definining global constants. Often the context will include the server itself so that you can initiate outbound requests and notifications in reaction to inbound messages.
+The last step is to start the server you created earlier. Use `lsp4clj.server/start`. This method accepts two arguments, the server and a "context".
+
+The context should be a hashmap. Whatever you provide in the context will be passed as the second argument to the notification and request `defmethods` you defined earlier. This is a convenient way to make components of your system available to those methods without definining global constants. Often the context will include the server itself so that you can initiate outbound requests and notifications in reaction to inbound messages. lsp4clj reserves the right to add its own data to the context, using keys namespaced with `:lsp4clj.server/...`.
 
 ```clojure
 (lsp4clj.server/start server {:server server, :logger logger})
 ```
 
-The return of `start` is a promise that will resolve when the server shuts down, which can happen in a few ways.
+The return of `start` is a promise that will resolve to `:done` when the server shuts down, which can happen in a few ways.
 
-First, if the server's input is closed, it will shutdown too. Second, if you call `lsp4clj.server/shutdown` on it, it will shutdown.
+First, if the server's input is closed, it will shut down too. Second, if you call `lsp4clj.server/shutdown` on it, it will shut down.
 
-When a server shuts down it stops reading input, finishes processing the messages it has in flight, and then closes is output. (It also closes its `:log-ch` and `:trace-ch`.) As such, it should probably not be shut down until the LSP notification `exit` (as opposed to the `shutdown` request) to ensure all messages are received.
+When a server shuts down it stops reading input, finishes processing the messages it has in flight, and then closes is output. (If it is shut down with `lsp4cl.server/shutdown` it also closes its `:log-ch` and `:trace-ch`.) As such, it should probably not be shut down until the LSP notification `exit` (as opposed to the `shutdown` request) to ensure all messages are received. `lsp4clj.server/shutdown` will not return until all messages have been processed, or until 10 seconds have passed, whichever happens sooner. It will return `:done` in the first case and `:timeout` in the second.
 
 ## Development details
+
+### Tracing
 
 As you are implementing, you may want to trace incoming and outgoing messages. Initialize the server with `:trace? true` and then read traces (strings) off its `:trace-ch`.
 
@@ -100,9 +104,11 @@ As you are implementing, you may want to trace incoming and outgoing messages. I
   (lsp4clj.server/start server context))
 ```
 
-For testing, observe that a client is in many ways like a server, in that it sends and receives requests and notifications. That is, LSP's flavor of JSON-RPC is bi-directional. As such, you may be able to use some of lsp4clj's tools to build a mock client for testing. See `integration.client` in `clojure-lsp` for one such example.
+### Testing
 
-You may also find `lsp4clj.server/chan-server` a useful alternative to `stdio-server`. This server reads and writes off channels, insead of stdio streams.
+A client is in many ways like a server—it also sends requests and notifications and receives responses. That is, LSP's flavor of JSON-RPC is bi-directional. As such, you may be able to use some of lsp4clj's tools to build a mock client for testing. See `integration.client` in `clojure-lsp` for one such example.
+
+You may also find `lsp4clj.server/chan-server` a useful alternative to `stdio-server`. This server reads and writes off channels, insead of stdio streams. See `lsp4clj.server-test` for many examples of interacting with such a server.
 
 ## Caveats
 
