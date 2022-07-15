@@ -142,6 +142,10 @@
 
 (defmethod receive-request :default [_method _context _params] ::method-not-found)
 (defmethod receive-notification :default [_method _context _params] ::method-not-found)
+;; Servers can't implement cancellation of inbound requests themselves, because
+;; lsp4clj manages request ids. Until lsp4clj adds support, ignore cancellation
+;; requests.
+(defmethod receive-notification "$/cancelRequest" [_ _ _])
 
 (defrecord ChanServer [input
                        output
