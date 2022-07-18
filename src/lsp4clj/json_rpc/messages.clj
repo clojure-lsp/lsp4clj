@@ -1,5 +1,7 @@
 (ns lsp4clj.json-rpc.messages)
 
+(set! *warn-on-reflection* true)
+
 (def base-message {:jsonrpc "2.0"})
 
 (defn request

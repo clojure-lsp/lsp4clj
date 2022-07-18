@@ -44,7 +44,7 @@
                                     :input input})
         join (server/start server nil)]
     (async/close! input)
-    (is (= :done @join))
+    (is (= :done (deref join 100 :timed-out)))
     ;; output also closes
     (is (nil? (h/take-or-timeout output)))))
 

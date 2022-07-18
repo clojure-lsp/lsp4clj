@@ -4,6 +4,8 @@
    [clojure.java.shell :as shell]
    [clojure.string :as string]))
 
+(set! *warn-on-reflection* true)
+
 (defn ^:private windows-process-alive?
   [pid]
   (let [{:keys [out]} (shell/sh "tasklist" "/fi" (format "\"pid eq %s\"" pid))]

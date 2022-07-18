@@ -2,7 +2,9 @@
   (:require
    [cheshire.core :as json]))
 
-(defn ^:private trace-tag [at]
+(set! *warn-on-reflection* true)
+
+(defn ^:private trace-tag [^java.time.Instant at]
   (format "[Trace - %s]"
           (str (.truncatedTo at java.time.temporal.ChronoUnit/MILLIS))))
 
@@ -23,7 +25,7 @@
    (str tag " " header "\n"
         body "\n\n\n")))
 
-(defn ^:private latency [started finished]
+(defn ^:private latency [^java.time.Instant started ^java.time.Instant finished]
   (- (.toEpochMilli finished) (.toEpochMilli started)))
 
 (defn received-notification [method params at]
