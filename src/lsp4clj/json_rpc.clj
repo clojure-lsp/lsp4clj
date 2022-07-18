@@ -77,9 +77,15 @@
 
   Reads in a thread to avoid blocking a go block thread."
   ([input] (input-stream->input-chan input {}))
-  ([^java.io.InputStream input {:keys [close? keyword-function]
-                                :or {close? true, keyword-function csk/->kebab-case-keyword}}]
-   (let [msgs (async/chan 1)]
+  ([^java.io.InputStream input
+    {:keys [close? keyword-function buf-or-n]
+     :or {close? true
+          keyword-function csk/->kebab-case-keyword
+          ;; By default buffer a few read messages, so that message parsing is
+          ;; less likely to block processing. Processing is still sequential
+          ;; because pipeline isn't parallel.
+          buf-or-n 8}}]
+   (let [msgs (async/chan buf-or-n)]
      (async/thread
        (loop [headers {}]
          (let [line (read-header-line input)]
@@ -101,15 +107,21 @@
   channel is closed, closes the output.
 
   Writes in a thread to avoid blocking a go block thread."
-  [^java.io.OutputStream output]
-  (let [messages (async/chan 1)]
-    (binding [*out* (io/writer output)]
-      (async/thread
-        (loop []
-          (if-let [msg (async/<!! messages)]
-            (do
-              (write-message msg)
-              (recur))
+  ([output] (output-stream->output-chan output {}))
+  ([^java.io.OutputStream output
+    {:keys [buf-or-n]
+     :or {;; By default buffer a few messages to write, so that message delivery is
+          ;; less likely to block processing. Processing is still sequential
+          ;; because pipeline isn't parallel.
+          buf-or-n 8}}]
+   (let [messages (async/chan buf-or-n)]
+     (binding [*out* (io/writer output)]
+       (async/thread
+         (loop []
+           (if-let [msg (async/<!! messages)]
+             (do
+               (write-message msg)
+               (recur))
             ;; channel closed; also close output
-            (.close output)))))
-    messages))
+             (.close output)))))
+     messages)))
