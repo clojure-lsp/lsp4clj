@@ -7,7 +7,6 @@
    [camel-snake-kebab.extras :as cske]
    [cheshire.core :as json]
    [clojure.core.async :as async]
-   [clojure.java.io :as io]
    [clojure.string :as string]))
 
 (set! *warn-on-reflection* true)
@@ -31,7 +30,7 @@
 
 (defn ^:private parse-charset [content-type]
   (or (when content-type
-        (when-let [[_ charset] (re-find #"; charset=(.*)$" content-type)]
+        (when-let [[_ charset] (re-find #"(?i)charset=(.*)$" content-type)]
           (when (not= "utf8" charset)
             charset)))
       "utf-8"))
@@ -51,12 +50,18 @@
   [k]
   (cond-> k (keyword? k) csk/->camelCaseString))
 
-(defn ^:private write-message [msg]
-  (let [content (json/generate-string (cske/transform-keys kw->camelCaseString msg))]
-    (print (str "Content-Length: " (count (.getBytes content "utf-8")) "\r\n"
-                "\r\n"
-                content))
-    (flush)))
+(def ^:private write-lock (Object.))
+
+(defn ^:private write-message [^java.io.OutputStream output msg]
+  (let [content (json/generate-string (cske/transform-keys kw->camelCaseString msg))
+        content-bytes (.getBytes content "utf-8")]
+    (locking write-lock
+      (doto output
+        (.write (-> (str "Content-Length: " (count content-bytes) "\r\n"
+                         "\r\n")
+                    (.getBytes "utf-8")))
+        (.write content-bytes)
+        (.flush)))))
 
 (defn ^:private read-header-line
   "Reads a line of input. Blocks if there are no messages on the input."
@@ -115,13 +120,10 @@
           ;; because pipeline isn't parallel.
           buf-or-n 8}}]
    (let [messages (async/chan buf-or-n)]
-     (binding [*out* (io/writer output)]
-       (async/thread
+     (async/thread
+       (with-open [writer output] ;; close output when channel closes
          (loop []
-           (if-let [msg (async/<!! messages)]
-             (do
-               (write-message msg)
-               (recur))
-            ;; channel closed; also close output
-             (.close output)))))
+           (when-let [msg (async/<!! messages)]
+             (write-message writer msg)
+             (recur)))))
      messages)))

@@ -101,7 +101,8 @@
 
 (defn ^:private receive-message
   [server context message]
-  (let [message-type (coercer/input-message-type message)]
+  (let [message-type (coercer/input-message-type message)
+        request? (identical? :request message-type)]
     (try
       (let [response
             (discarding-stdout
@@ -115,13 +116,12 @@
                 :notification
                 (protocols.endpoint/receive-notification server context message)))]
         ;; Ensure server only responds to requests
-        (when (identical? :request message-type)
-          response))
+        (when request? response))
       (catch Throwable e
         (let [message-basics (select-keys message [:id :method])]
           (protocols.endpoint/log server :error e (str (format-error-code "Error receiving message" :internal-error) "\n"
                                                        message-basics))
-          (when (identical? :request message-type)
+          (when request?
             (->> message-basics
                  (json-rpc.messages/standard-error-result :internal-error)
                  (json-rpc.messages/response (:id message)))))))))
