@@ -12,7 +12,7 @@
 
 (set! *warn-on-reflection* true)
 
-(defn ^:private read-n-chars [^java.io.InputStream input content-length charset-s]
+(defn ^:private read-n-bytes [^java.io.InputStream input content-length charset-s]
   (let [buffer (byte-array content-length)]
     (loop [total-read 0]
       (when (< total-read content-length)
@@ -40,12 +40,12 @@
   (try
     (let [content-length (parse-long (get headers "Content-Length"))
           charset-s (parse-charset (get headers "Content-Type"))
-          content (read-n-chars input content-length charset-s)]
+          content (read-n-bytes input content-length charset-s)]
       (json/parse-string content keyword-function))
     (catch Exception _
       :parse-error)))
 
-(defn kw->camelCaseString
+(defn ^:private kw->camelCaseString
   "Convert keywords to camelCase strings, but preserve capitalization of things
   that are already strings."
   [k]
