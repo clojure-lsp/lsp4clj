@@ -72,6 +72,17 @@
     (is (= {:key "äpfel"}
            (h/take-or-timeout input-ch)))))
 
+(deftest input-stream-should-ignore-unexpected-headers
+  (let [input-stream (mock-input-stream
+                       (mock-messages
+                         ["Content-Length: 15"
+                          "Referer: \"/\""
+                          ""
+                          "{\"key\":\"apple\"}"]))
+        input-ch (json-rpc/input-stream->input-chan input-stream)]
+    (is (= {:key "apple"}
+           (h/take-or-timeout input-ch)))))
+
 (deftest input-stream-should-return-parse-error
   (testing "when content length is wrong"
     (let [input-stream (mock-input-stream

@@ -24,8 +24,6 @@
 
 (defn ^:private parse-header [line headers]
   (let [[h v] (string/split line #":\s*" 2)]
-    (when-not (contains? #{"Content-Length" "Content-Type"} h)
-      (throw (ex-info "unexpected header" {:line line})))
     (assoc headers h v)))
 
 (defn ^:private parse-charset [content-type]
