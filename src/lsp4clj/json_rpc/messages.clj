@@ -22,10 +22,10 @@
 
 (def error-codes
   {;; JSON-RPC errors
-   ;; Is parse-error possible? How could you reply to a request if you weren't
-   ;; able to parse it?
+   ;; Is it possible to respond if you have a parse error? How could you reply
+   ;; to a request if you weren't able to parse it?
    :parse-error      {:code -32700, :message "Parse error"}
-   ;; Similarly for invalid-request? How could you reply to a request if it
+   ;; Similarly for invalid-request. How could you reply to a request if it
    ;; doesn't look like a request?
    :invalid-request  {:code -32600, :message "Invalid Request"}
    :method-not-found {:code -32601, :message "Method not found"}

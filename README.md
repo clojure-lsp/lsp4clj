@@ -35,11 +35,13 @@ These `defmethod`s receive 3 arguments, the method name, a "context", and the `p
 
 ```clojure
 ;; a notification; return value is ignored
-(defmethod lsp4clj.server/receive-notification "textDocument/didOpen" [_ context {:keys [text-document]}]
+(defmethod lsp4clj.server/receive-notification "textDocument/didOpen"
+  [_ context {:keys [text-document]}]
   (handler/did-open context (:uri text-document) (:text text-document))
   
 ;; a request; return value is converted to a response
-(defmethod lsp4clj.server/receive-request "textDocument/definition" [_ context params]
+(defmethod lsp4clj.server/receive-request "textDocument/definition"
+  [_ context params]
   (->> params
        (handler/definition context)
        (conform-or-log ::coercer/location)))

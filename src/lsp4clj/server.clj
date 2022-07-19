@@ -79,14 +79,14 @@
   client.
 
   Otherwise, the object presents the same interface as `future`. Responds to
-  `future-cancel` (which sends `$/cancelRequest`), `realized?`, `future-done?`
-  and `future-cancelled?`.
+  `future-cancel` (which sends `$/cancelRequest`), `realized?`, `future?`
+  `future-done?` and `future-cancelled?`.
 
   If the request is cancelled, future invokations of `deref` will return
   `:lsp4clj.server/cancelled`.
 
   Sends `$/cancelRequest` only once, though it is permitted to call
-  `lsp4clj.server/deref-or-cancel` and `future-cancel` multiple times."
+  `lsp4clj.server/deref-or-cancel` or `future-cancel` multiple times."
   [id method started server]
   (map->PendingRequest {:p (promise)
                         :cancelled? (atom false)
@@ -134,8 +134,8 @@
 (def send-notification protocols.endpoint/send-notification)
 
 ;; Let language servers implement their own message receivers. These are
-;; slightly different from protocols.endpont/receive-request, in that they
-;; receive the message params, not the whole message.
+;; slightly different from the identically named protocols.endpoint versions, in
+;; that they receive the message params, not the whole message.
 
 (defmulti receive-request (fn [method _context _params] method))
 (defmulti receive-notification (fn [method _context _params] method))

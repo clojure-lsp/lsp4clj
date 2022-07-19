@@ -88,21 +88,21 @@
           ;; less likely to block processing. Processing is still sequential
           ;; because pipeline isn't parallel.
           buf-or-n 8}}]
-   (let [msgs (async/chan buf-or-n)]
+   (let [messages (async/chan buf-or-n)]
      (async/thread
        (loop [headers {}]
          (let [line (read-header-line input)]
            (cond
              ;; input closed; also close channel
-             (= line ::eof)       (async/close! msgs)
+             (= line ::eof) (async/close! messages)
              ;; a blank line after the headers indicates start of message
-             (string/blank? line) (if (async/>!! msgs (read-message input headers keyword-function))
+             (string/blank? line) (if (async/>!! messages (read-message input headers keyword-function))
                                     ;; wait for next message
                                     (recur {})
-                                    ;; msgs closed
+                                    ;; messages closed
                                     (when close? (.close input)))
-             :else                (recur (parse-header line headers))))))
-     msgs)))
+             :else (recur (parse-header line headers))))))
+     messages)))
 
 (defn output-stream->output-chan
   "Returns a channel which expects to have messages put on it. nil values are
