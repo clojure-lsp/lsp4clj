@@ -8,67 +8,67 @@
   (format "[Trace - %s]"
           (str (.truncatedTo at java.time.temporal.ChronoUnit/MILLIS))))
 
-(defn ^:private format-header
-  ([description method]
-   (format "%s '%s'" description method))
-  ([description method id]
-   (format "%s '%s - (%s)'" description method id)))
+(defn ^:private format-request [{:keys [method id]}]
+  (format "request '%s - (%s)'" method id))
 
-(defn ^:private format-error-header [error]
+(defn ^:private format-response-header [{:keys [method id]}]
+  (format "response '%s - (%s)'" method id))
+
+(defn ^:private format-notification [{:keys [method]}]
+  (format "notification '%s'" method))
+
+(defn ^:private format-error [error]
   (format "Request failed: %s (%s)." (:message error) (:code error)))
 
-(defn ^:private format-body
-  ([params] (format-body "Params" params))
-  ([label params] (str label ": " (json/generate-string params {:pretty true}))))
+(defn ^:private format-body [label body]
+  (str label ": " (json/generate-string body {:pretty true})))
 
-(defn ^:private format-error-body [error]
-  (format-body "Error data" (:data error)))
+(defn ^:private format-params [{:keys [params]}]
+  (format-body "Params" params))
+
+(defn ^:private format-response-body [{:keys [error result]}]
+  (if error
+    (format-body "Error data" (:data error))
+    (format-body "Result" result)))
 
 (defn ^:private format-str
-  ([tag header extra-header body]
-   (format-str tag (str header extra-header) body))
-  ([tag header body]
-   (str tag " " header "\n"
+  ([at action header extra-header body]
+   (format-str at action (str header extra-header) body))
+  ([at action header body]
+   (str (format-tag at) " " action " " header "\n"
         body "\n\n\n")))
 
 (defn ^:private latency [^java.time.Instant started ^java.time.Instant finished]
-  (- (.toEpochMilli finished) (.toEpochMilli started)))
+  (format "%sms" (- (.toEpochMilli finished) (.toEpochMilli started))))
 
-(defn received-notification [{:keys [method params]} at]
-  (format-str (format-tag at)
-              (format-header "Received notification" method)
-              (format-body params)))
+(defn received-notification [notif at]
+  (format-str at "Received" (format-notification notif)
+              (format-params notif)))
 
-(defn received-request [{:keys [id method params]} at]
-  (format-str (format-tag at)
-              (format-header "Received request" method id)
-              (format-body params)))
+(defn received-request [req at]
+  (format-str at "Received" (format-request req)
+              (format-params req)))
 
-(defn received-response [{:keys [id method] :as _req} {:keys [result error] :as _resp} started finished]
-  (format-str (format-tag finished)
-              (format-header "Received response" method id)
-              (str (format " in %sms." (latency started finished))
-                   (when error (str " " (format-error-header error))))
-              (if error (format-error-body error) (format-body "Result" result))))
+(defn received-response [req {:keys [error] :as resp} started finished]
+  (format-str finished "Received" (format-response-header req)
+              (str (format " in %s." (latency started finished))
+                   (when error (str " " (format-error error))))
+              (format-response-body resp)))
 
 (defn received-unmatched-response [resp at]
-  (format-str (format-tag at)
-              "Received response for unmatched request:"
+  (format-str at "Received" "response for unmatched request:"
               (format-body "Body" resp)))
 
-(defn sending-notification [{:keys [method params]} at]
-  (format-str (format-tag at)
-              (format-header "Sending notification" method)
-              (format-body params)))
+(defn sending-notification [notif at]
+  (format-str at "Sending" (format-notification notif)
+              (format-params notif)))
 
-(defn sending-request [{:keys [id method params]} at]
-  (format-str (format-tag at)
-              (format-header "Sending request" method id)
-              (format-body params)))
+(defn sending-request [req at]
+  (format-str at "Sending" (format-request req)
+              (format-params req)))
 
-(defn sending-response [{:keys [id method]} {:keys [result error]} started finished]
-  (format-str (format-tag finished)
-              (format-header "Sending response" method id)
-              (str (format ". Processing request took %sms" (latency started finished))
-                   (when error (str ". " (format-error-header error))))
-              (if error (format-error-body error) (format-body "Result" result))))
+(defn sending-response [req {:keys [error] :as resp} started finished]
+  (format-str finished "Sending" (format-response-header req)
+              (str (format ". Processing request took %s" (latency started finished))
+                   (when error (str ". " (format-error error))))
+              (format-response-body resp)))
