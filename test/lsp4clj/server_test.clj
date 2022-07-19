@@ -238,15 +238,9 @@
                        "  \"result\" : \"body\""
                        "}"])
            (h/assert-take trace-ch)))
-    (is (= (trace-str ["[Trace - 2022-03-05T13:35:23Z] Sending response 'foo - (1)'. Processing request took 0ms"
-                       "Result: {"
-                       "  \"error\" : {"
-                       "    \"code\" : -32601,"
-                       "    \"message\" : \"Method not found\","
-                       "    \"data\" : {"
-                       "      \"method\" : \"foo\""
-                       "    }"
-                       "  }"
+    (is (= (trace-str ["[Trace - 2022-03-05T13:35:23Z] Sending response 'foo - (1)'. Processing request took 0ms. Request failed: Method not found (-32601)."
+                       "Error data: {"
+                       "  \"method\" : \"foo\""
                        "}"])
            (h/assert-take trace-ch)))
     (server/shutdown server)))

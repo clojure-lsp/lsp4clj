@@ -187,7 +187,7 @@
           now (.instant clock)
           req (json-rpc.messages/request id method body)
           pending-request (pending-request id method now this)]
-      (some-> trace-ch (async/put! (trace/sending-request id method body now)))
+      (some-> trace-ch (async/put! (trace/sending-request req now)))
       ;; Important: record request before sending it, so it is sure to be
       ;; available during receive-response.
       (swap! pending-requests* assoc id pending-request)
@@ -197,20 +197,20 @@
   (send-notification [_this method body]
     (let [now (.instant clock)
           notif (json-rpc.messages/request method body)]
-      (some-> trace-ch (async/put! (trace/sending-notification method body now)))
+      (some-> trace-ch (async/put! (trace/sending-notification notif now)))
       ;; respect back pressure from clients that are slow to read; (go (>!)) will not suffice
       (async/>!! output notif)))
-  (receive-response [_this {:keys [id] :as resp}]
+  (receive-response [_this {:keys [id error result] :as resp}]
     (let [now (.instant clock)]
-      (if-let [{:keys [id method p started]} (get @pending-requests* id)]
-        (let [{:keys [error result]} resp]
-          (some-> trace-ch (async/put! (trace/received-response id method result error started now)))
+      (if-let [{:keys [p started] :as req} (get @pending-requests* id)]
+        (do
+          (some-> trace-ch (async/put! (trace/received-response req resp started now)))
           (swap! pending-requests* dissoc id)
           (deliver p (if error resp result)))
-        (some-> trace-ch (async/put! (trace/received-unmatched-response now resp))))))
-  (receive-request [this context {:keys [id method params]}]
+        (some-> trace-ch (async/put! (trace/received-unmatched-response resp now))))))
+  (receive-request [this context {:keys [id method params] :as req}]
     (let [started (.instant clock)]
-      (some-> trace-ch (async/put! (trace/received-request id method params started)))
+      (some-> trace-ch (async/put! (trace/received-request req started)))
       (let [result (let [result (receive-request method context params)]
                      (if (identical? ::method-not-found result)
                        (do
@@ -219,10 +219,10 @@
                        result))
             resp (json-rpc.messages/response id result)
             finished (.instant clock)]
-        (some-> trace-ch (async/put! (trace/sending-response id method result started finished)))
+        (some-> trace-ch (async/put! (trace/sending-response req resp started finished)))
         resp)))
-  (receive-notification [this context {:keys [method params]}]
-    (some-> trace-ch (async/put! (trace/received-notification method params (.instant clock))))
+  (receive-notification [this context {:keys [method params] :as notif}]
+    (some-> trace-ch (async/put! (trace/received-notification notif (.instant clock))))
     (when (identical? ::method-not-found (receive-notification method context params))
       (protocols.endpoint/log this :warn "received unexpected notification" method))))
 
