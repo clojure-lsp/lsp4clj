@@ -238,7 +238,7 @@
                        "  \"result\" : \"body\""
                        "}"])
            (h/assert-take trace-ch)))
-    (is (= (trace-str ["[Trace - 2022-03-05T13:35:23Z] Sending response 'foo - (1)'. Processing request took 0ms. Request failed: Method not found (-32601)."
+    (is (= (trace-str ["[Trace - 2022-03-05T13:35:23Z] Sending response 'foo - (1)'. Request took 0ms. Request failed: Method not found (-32601)."
                        "Error data: {"
                        "  \"method\" : \"foo\""
                        "}"])
@@ -262,7 +262,7 @@
                        "}"])
            (h/assert-take trace-ch)))
     (async/put! input (messages/response (:id client-rcvd-msg) {:processed true}))
-    (is (= (trace-str ["[Trace - 2022-03-05T13:35:23Z] Received response 'req - (1)' in 0ms."
+    (is (= (trace-str ["[Trace - 2022-03-05T13:35:23Z] Received response 'req - (1)'. Request took 0ms."
                        "Result: {"
                        "  \"processed\" : true"
                        "}"])
@@ -288,7 +288,7 @@
     (async/put! input
                 (messages/response (:id client-rcvd-msg)
                                    {:error {:code 1234 :message "Something bad" :data {:body "foo"}}}))
-    (is (= (trace-str ["[Trace - 2022-03-05T13:35:23Z] Received response 'req - (1)' in 0ms. Request failed: Something bad (1234)."
+    (is (= (trace-str ["[Trace - 2022-03-05T13:35:23Z] Received response 'req - (1)'. Request took 0ms. Request failed: Something bad (1234)."
                        "Error data: {"
                        "  \"body\" : \"foo\""
                        "}"])

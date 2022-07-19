@@ -8,17 +8,14 @@
   (format "[Trace - %s]"
           (str (.truncatedTo at java.time.temporal.ChronoUnit/MILLIS))))
 
-(defn ^:private format-request [{:keys [method id]}]
+(defn ^:private format-request-header [{:keys [method id]}]
   (format "request '%s - (%s)'" method id))
 
 (defn ^:private format-response-header [{:keys [method id]}]
   (format "response '%s - (%s)'" method id))
 
-(defn ^:private format-notification [{:keys [method]}]
+(defn ^:private format-notification-header [{:keys [method]}]
   (format "notification '%s'" method))
-
-(defn ^:private format-error [error]
-  (format "Request failed: %s (%s)." (:message error) (:code error)))
 
 (defn ^:private format-body [label body]
   (str label ": " (json/generate-string body {:pretty true})))
@@ -31,44 +28,38 @@
     (format-body "Error data" (:data error))
     (format-body "Result" result)))
 
-(defn ^:private format-str
-  ([at action header extra-header body]
-   (format-str at action (str header extra-header) body))
-  ([at action header body]
-   (str (format-tag at) " " action " " header "\n"
-        body "\n\n\n")))
+(defn ^:private format-str [at action header body]
+  (str (format-tag at) " " action " " header "\n"
+       body "\n\n\n"))
 
 (defn ^:private latency [^java.time.Instant started ^java.time.Instant finished]
   (format "%sms" (- (.toEpochMilli finished) (.toEpochMilli started))))
 
-(defn received-notification [notif at]
-  (format-str at "Received" (format-notification notif)
+(defn ^:private format-notification [action notif at]
+  (format-str at action (format-notification-header notif)
               (format-params notif)))
 
-(defn received-request [req at]
-  (format-str at "Received" (format-request req)
+(defn ^:private format-request [action req at]
+  (format-str at action (format-request-header req)
               (format-params req)))
 
-(defn received-response [req {:keys [error] :as resp} started finished]
-  (format-str finished "Received" (format-response-header req)
-              (str (format " in %s." (latency started finished))
-                   (when error (str " " (format-error error))))
+(defn ^:private format-response [action req {:keys [error] :as resp} started finished]
+  (format-str finished action
+              (format
+                (str "%s. Request took %s." (when error " Request failed: %s (%s)."))
+                (format-response-header req)
+                (latency started finished)
+                (:message error) (:code error))
               (format-response-body resp)))
+
+(defn received-notification [notif at] (format-notification "Received" notif at))
+(defn received-request [req at] (format-request "Received" req at))
+(defn received-response [req resp started finished] (format-response "Received" req resp started finished))
 
 (defn received-unmatched-response [resp at]
   (format-str at "Received" "response for unmatched request:"
               (format-body "Body" resp)))
 
-(defn sending-notification [notif at]
-  (format-str at "Sending" (format-notification notif)
-              (format-params notif)))
-
-(defn sending-request [req at]
-  (format-str at "Sending" (format-request req)
-              (format-params req)))
-
-(defn sending-response [req {:keys [error] :as resp} started finished]
-  (format-str finished "Sending" (format-response-header req)
-              (str (format ". Processing request took %s" (latency started finished))
-                   (when error (str ". " (format-error error))))
-              (format-response-body resp)))
+(defn sending-notification [notif at] (format-notification "Sending" notif at))
+(defn sending-request [req at] (format-request "Sending" req at))
+(defn sending-response [req resp started finished] (format-response "Sending" req resp started finished))
