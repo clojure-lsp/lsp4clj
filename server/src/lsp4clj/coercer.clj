@@ -619,7 +619,7 @@
 (s/def :client-capabilities/document-link ::legacy-debean)
 (s/def :client-capabilities/formatting ::legacy-debean)
 (s/def :client-capabilities/implementation ::legacy-debean)
-(s/def :client-capabilities/notebook-document ::legacy-debean)
+(s/def :client-capabilities/notebook-document ::debean)
 (s/def :client-capabilities/on-type-formatting ::legacy-debean)
 (s/def :client-capabilities/publish-diagnostics ::legacy-debean)
 (s/def :client-capabilities/range-formatting ::legacy-debean)
