@@ -61,7 +61,7 @@ Servers also initiate their own requests and notifications to a client. To send 
      (lsp4clj.server/send-notification server "window/showMessage"))
 ```
 
-Sending a request is similar, with `lsp4clj.server/send-request`. This method returns a request object which may be dereffed to get the client's response. Most of the time you will want to call `lsp4clj.server/deref-or-cancel`, which will send a `$/cancelRequest` to the client if a timeout is reached.
+Sending a request is similar, with `lsp4clj.server/send-request`. This method returns a request object which may be dereffed to get the client's response. Most of the time you will want to call `lsp4clj.server/deref-or-cancel`, which will send a `$/cancelRequest` to the client if a timeout is reached before the client responds.
 
 ```clojure
 (let [request (->> {:edit edit}
@@ -73,11 +73,17 @@ Sending a request is similar, with `lsp4clj.server/send-request`. This method re
     response))
 ```
 
+Otherwise, the request object presents the same interface as `future`. Responds to `future-cancel` (which sends `$/cancelRequest`), `realized?`, `future?`, `future-done?` and `future-cancelled?`.
+
+If the request is cancelled, future invocations of `deref` will return `:lsp4clj.server/cancelled`.
+
+Sends `$/cancelRequest` only once, though `lsp4clj.server/deref-or-cancel` or `future-cancel` can be called multiple times.
+
 ### Start and stop a server
 
 The last step is to start the server you created earlier. Use `lsp4clj.server/start`. This method accepts two arguments, the server and a "context".
 
-The context should be a hashmap. Whatever you provide in the context will be passed as the second argument to the notification and request `defmethod`s you defined earlier. This is a convenient way to make components of your system available to those methods without definining global constants. Often the context will include the server itself so that you can initiate outbound requests and notifications in reaction to inbound messages. lsp4clj reserves the right to add its own data to the context, using keys namespaced with `:lsp4clj.server/...`.
+The context should be `associative?`. Whatever you provide in the context will be passed as the second argument to the notification and request `defmethod`s you defined earlier. This is a convenient way to make components of your system available to those methods without definining global constants. Often the context will include the server itself so that you can initiate outbound requests and notifications in reaction to inbound messages. lsp4clj reserves the right to add its own data to the context, using keys namespaced with `:lsp4clj.server/...`.
 
 ```clojure
 (lsp4clj.server/start server {:server server, :logger logger})

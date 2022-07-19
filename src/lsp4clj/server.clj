@@ -82,11 +82,11 @@
   `future-cancel` (which sends `$/cancelRequest`), `realized?`, `future?`
   `future-done?` and `future-cancelled?`.
 
-  If the request is cancelled, future invokations of `deref` will return
+  If the request is cancelled, future invocations of `deref` will return
   `:lsp4clj.server/cancelled`.
 
-  Sends `$/cancelRequest` only once, though it is permitted to call
-  `lsp4clj.server/deref-or-cancel` or `future-cancel` multiple times."
+  Sends `$/cancelRequest` only once, though `lsp4clj.server/deref-or-cancel` or
+  `future-cancel` can be called multiple times."
   [id method started server]
   (map->PendingRequest {:p (promise)
                         :cancelled? (atom false)
