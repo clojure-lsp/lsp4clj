@@ -59,5 +59,5 @@
                           :report)
                   :title message
                   :percentage percentage}]
-    {:token (or progress-token "clojure-lsp")
+    {:token (or progress-token "lsp4clj")
      :value progress}))
