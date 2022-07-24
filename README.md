@@ -86,7 +86,7 @@ The last step is to start the server you created earlier. Use `lsp4clj.server/st
 The context should be `associative?`. Whatever you provide in the context will be passed as the second argument to the notification and request `defmethod`s you defined earlier. This is a convenient way to make components of your system available to those methods without definining global constants. Often the context will include the server itself so that you can initiate outbound requests and notifications in reaction to inbound messages. lsp4clj reserves the right to add its own data to the context, using keys namespaced with `:lsp4clj.server/...`.
 
 ```clojure
-(lsp4clj.server/start server {:server server, :logger logger})
+(lsp4clj.server/start server {:custom-settings custom-settings, :logger logger})
 ```
 
 The return of `start` is a promise that will resolve to `:done` when the server shuts down, which can happen in a few ways.
