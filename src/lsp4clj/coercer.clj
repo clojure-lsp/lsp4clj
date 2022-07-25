@@ -236,38 +236,6 @@
                                                :show-message/message]
                                       :opt-un [:show-message-request/actions]))
 
-;; (def work-done-progress-kind-enum
-;;   {:begin WorkDoneProgressKind/begin
-;;    :report WorkDoneProgressKind/report
-;;    :end WorkDoneProgressKind/end})
-;;
-;; (s/def :work-done-progress/kind (s/and keyword?
-;;                                        work-done-progress-kind-enum))
-;;
-;; (s/def ::work-done-progress (s/and (s/keys :req-un [:work-done-progress/kind])
-;;                                    (s/conformer (fn [w]
-;;                                                   (case (:kind w)
-;;                                                     :begin (doto (WorkDoneProgressBegin.)
-;;                                                              (.setTitle (:title w))
-;;                                                              (.setCancellable (:cancelable w))
-;;                                                              (.setMessage (:message w))
-;;                                                              (.setPercentage (int (:percentage w))))
-;;                                                     :report (doto (WorkDoneProgressReport.)
-;;                                                               (.setCancellable (:cancelable w))
-;;                                                               (.setMessage (:message w))
-;;                                                               (.setPercentage (int (:percentage w))))
-;;                                                     :end (doto (WorkDoneProgressEnd.)
-;;                                                            (.setMessage (:message w))))))))
-;;
-;; (s/def :progress/token string?)
-;;
-;; (s/def :progress/value ::work-done-progress)
-;;
-;; (s/def ::notify-progress (s/and (s/keys :req-un [:progress/token
-;;                                                  :progress/value])
-;;                                 (s/conformer #(ProgressParams. (Either/forLeft ^String (:token %))
-;;                                                                (Either/forLeft ^WorkDoneProgressNotification (:value %))))))
-;;
 (s/def ::show-document-request
   (s/and (s/keys :req-un [::uri ::range]
                  :opt-un [::take-focus])
