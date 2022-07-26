@@ -57,21 +57,22 @@
       (doto output
         (.write (-> (str "Content-Length: " (count content-bytes) "\r\n"
                          "\r\n")
-                    (.getBytes "utf-8")))
+                    (.getBytes "US-ASCII"))) ;; headers are in ASCII, not UTF-8
         (.write content-bytes)
         (.flush)))))
 
 (defn ^:private read-header-line
   "Reads a line of input. Blocks if there are no messages on the input."
   [^java.io.InputStream input]
-  (loop [s (java.lang.StringBuilder.)]
-    (let [b (.read input)]
-      (case b
-        -1 ::eof ;; end of stream
-        #_lf 10 (str s) ;; finished reading line
-        #_cr 13 (recur s) ;; ignore carriage returns
-        (do (.append s (char b))
-            (recur s))))))
+  (let [s (java.lang.StringBuilder.)]
+    (loop []
+      (let [b (.read input)] ;; blocks, presumably waiting for next message
+        (case b
+          -1 ::eof ;; end of stream
+          #_lf 10 (str s) ;; finished reading line
+          #_cr 13 (recur) ;; ignore carriage returns
+          (do (.append s (char b)) ;; byte == char because header is in US-ASCII
+              (recur)))))))
 
 (defn input-stream->input-chan
   "Returns a channel which will yield parsed messages that have been read off
