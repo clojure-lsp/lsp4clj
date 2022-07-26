@@ -21,6 +21,7 @@
       (assoc response :result result))))
 
 (def error-codes
+  ;; https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification/#errorCodes
   {;; JSON-RPC errors
    ;; Is it possible to respond if you have a parse error? How could you reply
    ;; to a request if you weren't able to parse it?
