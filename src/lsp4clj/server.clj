@@ -202,11 +202,11 @@
       ;; respect back pressure from clients that are slow to read; (go (>!)) will not suffice
       (async/>!! output notif)))
   (receive-response [_this {:keys [id error result] :as resp}]
-    (let [now (.instant clock)]
-      (if-let [{:keys [p started] :as req} (get @pending-requests* id)]
+    (let [now (.instant clock)
+          [pending-requests _] (swap-vals! pending-requests* dissoc id)]
+      (if-let [{:keys [p started] :as req} (get pending-requests id)]
         (do
           (some-> trace-ch (async/put! (trace/received-response req resp started now)))
-          (swap! pending-requests* dissoc id)
           (deliver p (if error resp result)))
         (some-> trace-ch (async/put! (trace/received-unmatched-response resp now))))))
   (receive-request [this context {:keys [id method params] :as req}]
