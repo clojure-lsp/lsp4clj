@@ -58,11 +58,12 @@
   (cancel [this _interrupt?]
     (if (.isDone this)
       false
-      (do
-        (reset! cancelled? true)
-        (protocols.endpoint/send-notification server "$/cancelRequest" {:id id})
-        (deliver p ::cancelled)
-        true))))
+      (if (compare-and-set! cancelled? false true)
+        (do
+          (protocols.endpoint/send-notification server "$/cancelRequest" {:id id})
+          (deliver p ::cancelled)
+          true)
+        false))))
 
 ;; Avoid error: java.lang.IllegalArgumentException: Multiple methods in multimethod 'simple-dispatch' match dispatch value: class lsp4clj.server.PendingRequest -> interface clojure.lang.IPersistentMap and interface clojure.lang.IDeref, and neither is preferred
 ;; Only when CIDER is running? See https://github.com/thi-ng/color/issues/10
