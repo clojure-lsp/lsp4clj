@@ -224,8 +224,9 @@
         resp)))
   (receive-notification [this context {:keys [method params] :as notif}]
     (some-> trace-ch (async/put! (trace/received-notification notif (.instant clock))))
-    (when (identical? ::method-not-found (receive-notification method context params))
-      (protocols.endpoint/log this :warn "received unexpected notification" method))))
+    (let [result (receive-notification method context params)]
+      (when (identical? ::method-not-found result)
+        (protocols.endpoint/log this :warn "received unexpected notification" method)))))
 
 (defn chan-server [{:keys [output input trace? clock]
                     :or {trace? false, clock (java.time.Clock/systemDefaultZone)}}]
