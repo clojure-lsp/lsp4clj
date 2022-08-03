@@ -8,14 +8,14 @@
 
 (def file-change-type-enum {1 :created 2 :changed 3 :deleted})
 (s/def :file-event/type (s/and int?
-                                  file-change-type-enum
-                                  (s/conformer file-change-type-enum)))
+                               file-change-type-enum
+                               (s/conformer file-change-type-enum)))
 (s/def ::file-event (s/keys :req-un [::uri :file-event/type]))
 (s/def :did-change-watched-files/changes (s/coll-of ::file-event))
 (s/def ::did-change-watched-files-params (s/keys :req-un [:did-change-watched-files/changes]))
 
 (s/def :error/code (s/and (s/or :kw keyword? :int int?)
-                             (s/conformer second)))
+                          (s/conformer second)))
 (s/def :error/message string?)
 
 (s/def ::error (s/keys :req-un [:error/code :error/message]
@@ -43,8 +43,8 @@
   (set/map-invert completion-item-kind->enum-val))
 
 (s/def :completion-item/kind (s/and keyword?
-                                       completion-item-kind->enum-val
-                                       (s/conformer completion-item-kind->enum-val)))
+                                    completion-item-kind->enum-val
+                                    (s/conformer completion-item-kind->enum-val)))
 
 (def insert-text-format-enum
   {:plaintext 1
@@ -97,11 +97,11 @@
 (s/def :create-file/options (s/keys :opt-un [::overwrite ::ignore-if-exists]))
 
 (s/def :create-file/kind (s/and string?
-                                   #(= % "create")))
+                                #(= % "create")))
 (s/def ::create-file (s/keys :req-un [:create-file/kind ::uri]
                              :opt-un [:create-file/options]))
 (s/def :rename-file/kind (s/and string?
-                                   #(= % "rename")))
+                                #(= % "rename")))
 (s/def :rename-file/old-uri ::uri)
 (s/def :rename-file/new-uri ::uri)
 
@@ -133,14 +133,14 @@
 (s/def :signature-help/documentation ::documentation)
 
 (s/def :signature-help/parameter (s/keys :req-un [::label]
-                                            :opt-un [:signature-help/documentation]))
+                                         :opt-un [:signature-help/documentation]))
 
 (s/def :signature-help/parameters (s/coll-of :signature-help/parameter))
 
 (s/def :signature-help/signature-information (s/keys :req-un [::label]
-                                                        :opt-un [:signature-help/documentation
-                                                                 :signature-help/parameters
-                                                                 :signature-help/active-parameter]))
+                                                     :opt-un [:signature-help/documentation
+                                                              :signature-help/parameters
+                                                              :signature-help/active-parameter]))
 
 (s/def :signature-help/signatures (s/coll-of :signature-help/signature-information))
 
@@ -155,8 +155,8 @@
    :type-parameter 26})
 
 (s/def :symbol/kind (s/and keyword?
-                              symbol-kind-enum
-                              (s/conformer symbol-kind-enum)))
+                           symbol-kind-enum
+                           (s/conformer symbol-kind-enum)))
 
 (s/def :document-symbol/selection-range ::range)
 
@@ -218,8 +218,8 @@
    :log 4})
 
 (s/def :show-message/type (s/and keyword?
-                                    show-message-type-enum
-                                    (s/conformer show-message-type-enum)))
+                                 show-message-type-enum
+                                 (s/conformer show-message-type-enum)))
 
 (s/def :show-message/message string?)
 
@@ -258,10 +258,10 @@
 (s/def :code-action/preferred boolean?)
 
 (s/def :code-action/kind (s/and (s/or :keyword (s/and keyword?
-                                                         code-action-kind
-                                                         (s/conformer code-action-kind))
-                                         :string string?)
-                                   (s/conformer second)))
+                                                      code-action-kind
+                                                      (s/conformer code-action-kind))
+                                      :string string?)
+                                (s/conformer second)))
 
 (s/def ::code-action (s/keys :req-un [:code-action/title]
                              :opt-un [:code-action/kind
