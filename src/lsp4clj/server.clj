@@ -148,8 +148,8 @@
 ;; requests.
 (defmethod receive-notification "$/cancelRequest" [_ _ _])
 
-(defrecord ChanServer [input
-                       output
+(defrecord ChanServer [input-ch
+                       output-ch
                        trace-ch
                        log-ch
                        ^java.time.Clock clock
@@ -160,22 +160,22 @@
   (start [this context]
     (let [pipeline (async/pipeline-blocking
                      1 ;; no parallelism, to preserve order of client messages
-                     output
+                     output-ch
                      ;; TODO: return error until initialize request is received? https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification/#initialize
                      ;; `keep` means we do not reply to responses and notifications
                      (keep #(receive-message this context %))
-                     input)]
+                     input-ch)]
       (async/go
-        ;; wait for pipeline to close, indicating input closed
+        ;; wait for pipeline to close, indicating input-ch closed
         (async/<! pipeline)
         (deliver join :done)))
     ;; invokers can deref the return of `start` to stay alive until server is
     ;; shut down
     join)
   (shutdown [_this]
-    ;; closing input will drain pipeline, then close output, then close
+    ;; closing input-ch will drain pipeline, then close output-ch, then close
     ;; pipeline
-    (async/close! input)
+    (async/close! input-ch)
     (async/close! log-ch)
     (some-> trace-ch async/close!)
     (deref join 10e3 :timeout))
@@ -193,14 +193,14 @@
       ;; available during receive-response.
       (swap! pending-requests* assoc id pending-request)
       ;; respect back pressure from clients that are slow to read; (go (>!)) will not suffice
-      (async/>!! output req)
+      (async/>!! output-ch req)
       pending-request))
   (send-notification [_this method body]
     (let [now (.instant clock)
           notif (json-rpc.messages/request method body)]
       (some-> trace-ch (async/put! (trace/sending-notification notif now)))
       ;; respect back pressure from clients that are slow to read; (go (>!)) will not suffice
-      (async/>!! output notif)))
+      (async/>!! output-ch notif)))
   (receive-response [_this {:keys [id error result] :as resp}]
     (let [now (.instant clock)
           [pending-requests _] (swap-vals! pending-requests* dissoc id)]
@@ -228,13 +228,13 @@
       (when (identical? ::method-not-found result)
         (protocols.endpoint/log this :warn "received unexpected notification" method)))))
 
-(defn chan-server [{:keys [output input trace? clock]
+(defn chan-server [{:keys [output-ch input-ch log-ch trace? trace-ch clock]
                     :or {trace? false, clock (java.time.Clock/systemDefaultZone)}}]
   (map->ChanServer
-    {:output output
-     :input input
-     :trace-ch (when trace? (async/chan (async/sliding-buffer 20)))
-     :log-ch (async/chan (async/sliding-buffer 20))
+    {:output-ch output-ch
+     :input-ch input-ch
+     :trace-ch (when trace? (or trace-ch (async/chan (async/sliding-buffer 20))))
+     :log-ch (or log-ch (async/chan (async/sliding-buffer 20)))
      :clock clock
      :request-id* (atom 0)
      :pending-requests* (atom {})
@@ -243,5 +243,5 @@
 #_{:clj-kondo/ignore [:clojure-lsp/unused-public-var]}
 (defn stdio-server [{:keys [in out] :as opts}]
   (chan-server (assoc opts
-                      :input (json-rpc/input-stream->input-chan in)
-                      :output (json-rpc/output-stream->output-chan out))))
+                      :input-ch (json-rpc/input-stream->input-chan in)
+                      :output-ch (json-rpc/output-stream->output-chan out))))
