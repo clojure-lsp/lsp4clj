@@ -203,7 +203,7 @@
       (.toInstant java.time.ZoneOffset/UTC)
       (java.time.Clock/fixed (java.time.ZoneId/systemDefault))))
 
-(defn trace-str [lines]
+(defn trace-log [lines]
   [:debug (string/join "\n" (into lines ["" "" ""]))])
 
 (deftest should-trace-received-notifications
@@ -216,7 +216,7 @@
         trace-ch (:trace-ch server)]
     (server/start server nil)
     (async/put! input-ch (messages/request "foo" {:result "body"}))
-    (is (= (trace-str ["[Trace - 2022-03-05T13:35:23Z] Received notification 'foo'"
+    (is (= (trace-log ["[Trace - 2022-03-05T13:35:23Z] Received notification 'foo'"
                        "Params: {"
                        "  \"result\" : \"body\""
                        "}"])
@@ -233,12 +233,12 @@
         trace-ch (:trace-ch server)]
     (server/start server nil)
     (async/put! input-ch (messages/request 1 "foo" {:result "body"}))
-    (is (= (trace-str ["[Trace - 2022-03-05T13:35:23Z] Received request 'foo - (1)'"
+    (is (= (trace-log ["[Trace - 2022-03-05T13:35:23Z] Received request 'foo - (1)'"
                        "Params: {"
                        "  \"result\" : \"body\""
                        "}"])
            (h/assert-take trace-ch)))
-    (is (= (trace-str ["[Trace - 2022-03-05T13:35:23Z] Sending response 'foo - (1)'. Request took 0ms. Request failed: Method not found (-32601)."
+    (is (= (trace-log ["[Trace - 2022-03-05T13:35:23Z] Sending response 'foo - (1)'. Request took 0ms. Request failed: Method not found (-32601)."
                        "Error data: {"
                        "  \"method\" : \"foo\""
                        "}"])
@@ -256,13 +256,13 @@
         _ (server/start server nil)
         _ (server/send-request server "req" {:body "foo"})
         client-rcvd-msg (h/assert-take output-ch)]
-    (is (= (trace-str ["[Trace - 2022-03-05T13:35:23Z] Sending request 'req - (1)'"
+    (is (= (trace-log ["[Trace - 2022-03-05T13:35:23Z] Sending request 'req - (1)'"
                        "Params: {"
                        "  \"body\" : \"foo\""
                        "}"])
            (h/assert-take trace-ch)))
     (async/put! input-ch (messages/response (:id client-rcvd-msg) {:processed true}))
-    (is (= (trace-str ["[Trace - 2022-03-05T13:35:23Z] Received response 'req - (1)'. Request took 0ms."
+    (is (= (trace-log ["[Trace - 2022-03-05T13:35:23Z] Received response 'req - (1)'. Request took 0ms."
                        "Result: {"
                        "  \"processed\" : true"
                        "}"])
@@ -280,7 +280,7 @@
         _ (server/start server nil)
         _ (server/send-request server "req" {:body "foo"})
         client-rcvd-msg (h/assert-take output-ch)]
-    (is (= (trace-str ["[Trace - 2022-03-05T13:35:23Z] Sending request 'req - (1)'"
+    (is (= (trace-log ["[Trace - 2022-03-05T13:35:23Z] Sending request 'req - (1)'"
                        "Params: {"
                        "  \"body\" : \"foo\""
                        "}"])
@@ -288,7 +288,7 @@
     (async/put! input-ch
                 (messages/response (:id client-rcvd-msg)
                                    {:error {:code 1234 :message "Something bad" :data {:body "foo"}}}))
-    (is (= (trace-str ["[Trace - 2022-03-05T13:35:23Z] Received response 'req - (1)'. Request took 0ms. Request failed: Something bad (1234)."
+    (is (= (trace-log ["[Trace - 2022-03-05T13:35:23Z] Received response 'req - (1)'. Request took 0ms. Request failed: Something bad (1234)."
                        "Error data: {"
                        "  \"body\" : \"foo\""
                        "}"])
@@ -305,7 +305,7 @@
         trace-ch (:trace-ch server)]
     (server/start server nil)
     (async/put! input-ch (messages/response 100 {:processed true}))
-    (is (= (trace-str ["[Trace - 2022-03-05T13:35:23Z] Received response for unmatched request:"
+    (is (= (trace-log ["[Trace - 2022-03-05T13:35:23Z] Received response for unmatched request:"
                        "Body: {"
                        "  \"jsonrpc\" : \"2.0\","
                        "  \"id\" : 100,"
@@ -326,7 +326,7 @@
         trace-ch (:trace-ch server)]
     (server/start server nil)
     (server/send-notification server "req" {:body "foo"})
-    (is (= (trace-str ["[Trace - 2022-03-05T13:35:23Z] Sending notification 'req'"
+    (is (= (trace-log ["[Trace - 2022-03-05T13:35:23Z] Sending notification 'req'"
                        "Params: {"
                        "  \"body\" : \"foo\""
                        "}"])
@@ -432,7 +432,7 @@
                                     :clock fixed-clock})]
     (server/start server nil)
     (async/put! input-ch (messages/request "foo" {:result "body"}))
-    (is (= (trace-str ["[Trace - 2022-03-05T13:35:23Z] Received notification 'foo'"
+    (is (= (trace-log ["[Trace - 2022-03-05T13:35:23Z] Received notification 'foo'"
                        "Params: {"
                        "  \"result\" : \"body\""
                        "}"])
