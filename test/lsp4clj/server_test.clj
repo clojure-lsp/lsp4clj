@@ -204,7 +204,7 @@
       (java.time.Clock/fixed (java.time.ZoneId/systemDefault))))
 
 (defn trace-str [lines]
-  (string/join "\n" (into lines ["" "" ""])))
+  [:debug (string/join "\n" (into lines ["" "" ""]))])
 
 (deftest should-trace-received-notifications
   (let [input (async/chan 3)

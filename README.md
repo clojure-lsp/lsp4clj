@@ -21,7 +21,7 @@ The returned server will have a core.async `:log-ch`, from which you can read se
 ```clojure
 (async/go-loop []
   (when-let [[level & args] (async/<! (:log-ch server))]
-    (apply logger/warn level args)
+    (apply logger/log level args)
     (recur)))
 ```
 
@@ -99,15 +99,15 @@ When a server shuts down it stops reading input, finishes processing the message
 
 ### Tracing
 
-As you are implementing, you may want to trace incoming and outgoing messages. Initialize the server with `:trace? true` and then read traces (strings) off its `:trace-ch`.
+As you are implementing, you may want to trace incoming and outgoing messages. Initialize the server with `:trace? true` and then read traces (two element vectors, beginning with the log level `:debug` and ending with a string, the trace itself) off its `:trace-ch`.
 
 ```clojure
 (let [server (lsp4clj.server/stdio-server {:trace? true
                                            :in System/in
                                            :out System/out})]
   (async/go-loop []
-    (when-let [trace (async/<! (:trace-ch server))]
-      (logger/debug trace)
+    (when-let [[level trace] (async/<! (:trace-ch server))]
+      (logger/log level trace)
       (recur)))
   (lsp4clj.server/start server context))
 ```
