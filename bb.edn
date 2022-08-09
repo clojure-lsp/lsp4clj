@@ -1,17 +1,13 @@
 {:paths ["scripts"]
  :min-bb-version "0.4.0"
  :tasks {:requires ([babashka.fs :as fs])
-         clean (do (fs/delete-tree "server/target")
-                   (fs/delete-tree "server/lsp4clj-server.jar")
-                   (fs/delete-tree "protocols/target")
-                   (fs/delete-tree "protocols/lsp4clj-protocols.jar"))
-         test (shell {:dir "server"} "clojure -M:test")
+         clean (do (fs/delete-tree "target")
+                   (fs/delete-tree "lsp4clj.jar"))
+         test (shell "clojure -M:test")
 
-         server-pom (shell {:dir "server"} "clojure -T:build pom")
-         protocols-pom (shell {:dir "protocols"} "clojure -T:build pom")
+         pom (shell "clojure -T:build pom")
 
-         server-jar (shell {:dir "server"} "clojure -T:build jar")
-         protocols-jar (shell {:dir "protocols"} "clojure -T:build jar")
+         jar (shell "clojure -T:build jar")
 
          lint (do (shell "clojure-lsp format --dry")
                   (shell "clojure-lsp clean-ns --dry")
@@ -22,5 +18,4 @@
          ;; Receive arg without v
          tag lsp4clj.ci/tag
 
-         deploy-clojars-server (shell {:dir "server"} "clojure -T:build deploy-clojars")
-         deploy-clojars-protocols (shell {:dir "protocols"} "clojure -T:build deploy-clojars")}}
+         deploy-clojars (shell "clojure -T:build deploy-clojars")}}
