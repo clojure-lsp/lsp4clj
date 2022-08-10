@@ -46,14 +46,17 @@
                                     completion-item-kind->enum-val
                                     (s/conformer completion-item-kind->enum-val)))
 
-(def insert-text-format-enum
+(def insert-text-format->enum-val
   {:plaintext 1
    :snippet 2})
 
+(def enum-val->insert-text-format
+  (set/map-invert insert-text-format->enum-val))
+
 (s/def :completion-item/insert-text-format
   (s/and keyword?
-         insert-text-format-enum
-         (s/conformer insert-text-format-enum)))
+         insert-text-format->enum-val
+         (s/conformer insert-text-format->enum-val)))
 
 (s/def ::new-text string?)
 (s/def ::text-edit (s/keys :req-un [::new-text ::range]))
@@ -83,8 +86,14 @@
          enum-val->completion-item-kind
          (s/conformer enum-val->completion-item-kind)))
 
+(s/def :input.completion-item/insert-text-format
+  (s/and integer?
+         enum-val->insert-text-format
+         (s/conformer enum-val->insert-text-format)))
+
 (s/def ::input.completion-item
-  (s/keys :opt-un [:input.completion-item/kind]))
+  (s/keys :opt-un [:input.completion-item/kind
+                   :input.completion-item/insert-text-format]))
 
 (s/def ::version (s/and integer? (s/conformer int)))
 (s/def ::uri string?)
