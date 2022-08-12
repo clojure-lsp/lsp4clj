@@ -229,11 +229,11 @@
         (protocols.endpoint/log this :warn "received unexpected notification" method)))))
 
 (defn chan-server [{:keys [output-ch input-ch log-ch trace? trace-ch clock]
-                    :or {trace? false, clock (java.time.Clock/systemDefaultZone)}}]
+                    :or {clock (java.time.Clock/systemDefaultZone)}}]
   (map->ChanServer
     {:output-ch output-ch
      :input-ch input-ch
-     :trace-ch (when trace? (or trace-ch (async/chan (async/sliding-buffer 20))))
+     :trace-ch (or trace-ch (and trace? (async/chan (async/sliding-buffer 20))))
      :log-ch (or log-ch (async/chan (async/sliding-buffer 20)))
      :clock clock
      :request-id* (atom 0)

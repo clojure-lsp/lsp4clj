@@ -427,7 +427,6 @@
         server (server/chan-server {:output-ch output-ch
                                     :input-ch input-ch
                                     :log-ch merged-ch
-                                    :trace? true
                                     :trace-ch merged-ch
                                     :clock fixed-clock})]
     (server/start server nil)
