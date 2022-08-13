@@ -73,11 +73,11 @@ Sending a request is similar, with `lsp4clj.server/send-request`. This method re
     response))
 ```
 
-Otherwise, the request object presents the same interface as `future`. Responds to `future-cancel` (which sends `$/cancelRequest`), `realized?`, `future?`, `future-done?` and `future-cancelled?`.
+The request object presents the same interface as `future`. It responds to `future-cancel` (which also sends `$/cancelRequest`), `realized?`, `future?`, `future-done?` and `future-cancelled?`.
 
-If the request is cancelled, future invocations of `deref` will return `:lsp4clj.server/cancelled`.
+If the request is cancelled, later invocations of `deref` will return `:lsp4clj.server/cancelled`.
 
-Sends `$/cancelRequest` only once, though `lsp4clj.server/deref-or-cancel` or `future-cancel` can be called multiple times.
+`$/cancelRequest` is sent only once, although `lsp4clj.server/deref-or-cancel` or `future-cancel` can be called multiple times.
 
 ### Start and stop a server
 
@@ -93,7 +93,17 @@ The return of `start` is a promise that will resolve to `:done` when the server 
 
 First, if the server's input is closed, it will shut down too. Second, if you call `lsp4clj.server/shutdown` on it, it will shut down.
 
-When a server shuts down it stops reading input, finishes processing the messages it has in flight, and then closes is output. (If it is shut down with `lsp4cl.server/shutdown` it also closes its `:log-ch` and `:trace-ch`.) As such, it should probably not be shut down until the LSP `exit` notification (as opposed to the `shutdown` request) to ensure all messages are received. `lsp4clj.server/shutdown` will not return until all messages have been processed, or until 10 seconds have passed, whichever happens sooner. It will return `:done` in the first case and `:timeout` in the second.
+When a server shuts down it stops reading input, finishes processing the messages it has in flight, and then closes is output. Finally it closes its `:log-ch` and `:trace-ch`. As such, it should probably not be shut down until the LSP `exit` notification (as opposed to the `shutdown` request) to ensure all messages are received. `lsp4clj.server/shutdown` will not return until all messages have been processed, or until 10 seconds have passed, whichever happens sooner. It will return `:done` in the first case and `:timeout` in the second.
+
+### Socket server
+
+The `stdio-server` is the most commonly used, but the library also provides a `lsp4clj.server/socket-server`.
+
+```clojure
+(lsp4clj.server/socket-server {:port 61235})
+```
+
+This will start listening on the provided port, blocking until a client makes a connection. When the connection is made it returns a lsp4clj server that has the same behavior as a `stdio-server`, except that messages are exchanged over the socket. When the server is shut down, the connection will be closed.
 
 ## Development details
 
@@ -114,13 +124,13 @@ As you are implementing, you may want to trace incoming and outgoing messages. I
 
 ### Testing
 
-A client is in many ways like a server—it also sends requests and notifications and receives responses. That is, LSP's flavor of JSON-RPC is bi-directional. As such, you may be able to use some of lsp4clj's tools to build a mock client for testing. See `integration.client` in `clojure-lsp` for one such example.
+A client is in many ways like a server—it also sends and receives requests and notifications and receives responses. That is, LSP uses JSON-RPC as a bi-directional protocol. As such, you may be able to use some of lsp4clj's tools to build a mock client for testing. See `integration.client` in `clojure-lsp` for one such example.
 
 You may also find `lsp4clj.server/chan-server` a useful alternative to `stdio-server`. This server reads and writes off channels, instead of stdio streams. See `lsp4clj.server-test` for many examples of interacting with such a server.
 
 ## Caveats
 
-You must not print to stdout while a `stdio-server` is running. This will corrupt its output stream and clients will receive malformed messages. To protect a block of code from writing to stdout, wrap it with `lsp4clj.server/discarding-stdout`. The `receive-notification` and `receive-request` multimethods are already protected this way, but tasks started outside of these multimethods need this protection added. See https://github.com/clojure-lsp/lsp4clj/issues/1 for future work on avoiding this problem.
+You must not print to stdout while a `stdio-server` is running. This will corrupt its output stream and clients will receive malformed messages. To protect a block of code from writing to stdout, wrap it with `lsp4clj.server/discarding-stdout`. The `receive-notification` and `receive-request` multimethods are already protected this way, but tasks started outside of these multimethods need this protection added. Consider using a `lsp4clj.server/socket-server` to avoid this problem.
 
 ## Known lsp4clj users
 

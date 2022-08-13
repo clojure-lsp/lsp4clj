@@ -4,7 +4,9 @@
    [clojure.string :as string]
    [clojure.test :refer [deftest is testing]]
    [lsp4clj.json-rpc :as json-rpc]
-   [lsp4clj.test-helper :as h]))
+   [lsp4clj.test-helper :as h])
+  (:import
+   [java.net Socket]))
 
 (defn ^:private message-lines [arr]
   (string/join "\r\n" arr))
@@ -109,3 +111,27 @@
                             "{\"key\":\"apple\"}"]))
           input-ch (json-rpc/input-stream->input-chan input-stream)]
       (is (= :parse-error (h/assert-take input-ch))))))
+
+(deftest socket-streams-should-communicate
+  (let [{:keys [socket-server on-connect]} (json-rpc/start-socket-server {:port 0})]
+    (with-open [server socket-server
+                client (Socket. (.getInetAddress server) (.getLocalPort server))]
+      (let [client-input-ch (json-rpc/input-stream->input-chan (.getInputStream client))
+            client-output-ch (json-rpc/output-stream->output-chan (.getOutputStream client))
+
+            [conn server-input-ch server-output-ch] (h/assert-deref on-connect)
+            client-message {:key "apple"}
+            server-message {:key "äpfel"}]
+        (try
+          (h/assert-put client-output-ch client-message)
+          (is (= client-message (h/assert-take server-input-ch)))
+          (h/assert-put server-output-ch server-message)
+          (is (= server-message (h/assert-take client-input-ch)))
+          (finally
+            ;; Closing the server-output-ch will also eventually close the conn,
+            ;; but better safe.
+            (async/close! server-output-ch)
+            (async/close! server-input-ch)
+            (.close conn)
+            (async/close! client-output-ch)
+            (async/close! client-input-ch)))))))

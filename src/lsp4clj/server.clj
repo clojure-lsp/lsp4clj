@@ -6,7 +6,9 @@
    [lsp4clj.json-rpc :as json-rpc]
    [lsp4clj.json-rpc.messages :as json-rpc.messages]
    [lsp4clj.protocols.endpoint :as protocols.endpoint]
-   [lsp4clj.trace :as trace]))
+   [lsp4clj.trace :as trace])
+  (:import
+   [java.net Socket ServerSocket]))
 
 (set! *warn-on-reflection* true)
 
@@ -153,6 +155,7 @@
                        trace-ch
                        log-ch
                        ^java.time.Clock clock
+                       on-close
                        request-id*
                        pending-requests*
                        join]
@@ -166,18 +169,21 @@
                      (keep #(receive-message this context %))
                      input-ch)]
       (async/go
-        ;; wait for pipeline to close, indicating input-ch closed
+        ;; Wait for pipeline to close. This indicates input-ch was closed and
+        ;; that now output-ch is closed.
         (async/<! pipeline)
+        ;; Do additional cleanup.
+        (async/close! log-ch)
+        (some-> trace-ch async/close!)
+        (on-close)
         (deliver join :done)))
     ;; invokers can deref the return of `start` to stay alive until server is
     ;; shut down
     join)
   (shutdown [_this]
-    ;; closing input-ch will drain pipeline, then close output-ch, then close
-    ;; pipeline
+    ;; Closing input-ch will drain pipeline then close it which, in turn,
+    ;; triggers additional cleanup.
     (async/close! input-ch)
-    (async/close! log-ch)
-    (some-> trace-ch async/close!)
     (deref join 10e3 :timeout))
   (log [_this level arg1]
     (async/put! log-ch [level arg1]))
@@ -228,14 +234,16 @@
       (when (identical? ::method-not-found result)
         (protocols.endpoint/log this :warn "received unexpected notification" method)))))
 
-(defn chan-server [{:keys [output-ch input-ch log-ch trace? trace-ch clock]
-                    :or {clock (java.time.Clock/systemDefaultZone)}}]
+(defn chan-server [{:keys [output-ch input-ch log-ch trace? trace-ch clock on-close]
+                    :or {clock (java.time.Clock/systemDefaultZone)
+                         on-close (constantly nil)}}]
   (map->ChanServer
     {:output-ch output-ch
      :input-ch input-ch
      :trace-ch (or trace-ch (and trace? (async/chan (async/sliding-buffer 20))))
      :log-ch (or log-ch (async/chan (async/sliding-buffer 20)))
      :clock clock
+     :on-close on-close
      :request-id* (atom 0)
      :pending-requests* (atom {})
      :join (promise)}))
@@ -245,3 +253,29 @@
   (chan-server (assoc opts
                       :input-ch (json-rpc/input-stream->input-chan in)
                       :output-ch (json-rpc/output-stream->output-chan out))))
+
+(defn init-socket-server [{:keys [address port]}]
+  (json-rpc/start-socket-server {:address address
+                                 :port (if (string? port) (parse-long port) port)}))
+
+#_{:clj-kondo/ignore [:clojure-lsp/unused-public-var]}
+(defn socket-server
+  "Starts listening on the address (loopback by default) and port. Blocks until
+  a client establishes a connection, then returns a chan-server which
+  communicates over the socket."
+  [{:keys [_address _port] :as opts}]
+  (let [{:keys [^ServerSocket socket-server on-connect]}
+        (or (:socket-data opts) ;; mostly for tests
+            (init-socket-server opts))
+        [^Socket conn input-ch output-ch] @on-connect
+        ;; NOTE: When the chan-server is shutdown, the input-ch and output-ch
+        ;; will also close. Eventually this will close the conn too, so
+        ;; re-closing it is probably unnecessary. Regardless, we should close
+        ;; the socket-server too.
+        on-close #(do
+                    (.close conn)
+                    (.close socket-server))]
+    (chan-server (assoc opts
+                        :input-ch input-ch
+                        :output-ch output-ch
+                        :on-close on-close))))
