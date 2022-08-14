@@ -1,7 +1,12 @@
 (ns lsp4clj.json-rpc
-  "Models LSP JSON-RPC as core.async channels of messages (Clojure hashmaps).
+  "Follows the LSP spec for reading and writing JSON-RPC messages. Converts the
+  messages to and from Clojure hashmaps and shuttles them to core.async
+  channels.
 
   https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification/#baseProtocol"
+  ;; TODO: after lsp4clj.server/stdio-server is removed, consider merging this
+  ;; namespace into lsp4clj.io-server. That will centralize everything that
+  ;; deals with Input and Output Streams.
   (:require
    [camel-snake-kebab.core :as csk]
    [camel-snake-kebab.extras :as cske]

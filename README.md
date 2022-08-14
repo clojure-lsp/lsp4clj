@@ -13,7 +13,7 @@ lsp4clj reads and writes from stdio, parsing JSON-RPC according to the LSP spec.
 To initialize a server that will read from stdin and write to stdout:
 
 ```clojure
-(lsp4clj.server/stdio-server {:in System/in, :out System/out})
+(lsp4clj.io-server/stdio-server)
 ```
 
 The returned server will have a core.async `:log-ch`, from which you can read server logs (vectors beginning with a log level).
@@ -112,9 +112,7 @@ This will start listening on the provided port, blocking until a client makes a 
 As you are implementing, you may want to trace incoming and outgoing messages. Initialize the server with `:trace? true` and then read traces (two element vectors, beginning with the log level `:debug` and ending with a string, the trace itself) off its `:trace-ch`.
 
 ```clojure
-(let [server (lsp4clj.server/stdio-server {:trace? true
-                                           :in System/in
-                                           :out System/out})]
+(let [server (lsp4clj.io-server/stdio-server {:trace? true})]
   (async/go-loop []
     (when-let [[level trace] (async/<! (:trace-ch server))]
       (logger/log level trace)
