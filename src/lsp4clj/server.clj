@@ -6,9 +6,7 @@
    [lsp4clj.json-rpc :as json-rpc]
    [lsp4clj.json-rpc.messages :as json-rpc.messages]
    [lsp4clj.protocols.endpoint :as protocols.endpoint]
-   [lsp4clj.trace :as trace])
-  (:import
-   [java.net Socket ServerSocket]))
+   [lsp4clj.trace :as trace]))
 
 (set! *warn-on-reflection* true)
 
@@ -234,9 +232,10 @@
       (when (identical? ::method-not-found result)
         (protocols.endpoint/log this :warn "received unexpected notification" method)))))
 
-(defn chan-server [{:keys [output-ch input-ch log-ch trace? trace-ch clock on-close]
-                    :or {clock (java.time.Clock/systemDefaultZone)
-                         on-close (constantly nil)}}]
+(defn chan-server
+  [{:keys [output-ch input-ch log-ch trace? trace-ch clock on-close]
+    :or {clock (java.time.Clock/systemDefaultZone)
+         on-close (constantly nil)}}]
   (map->ChanServer
     {:output-ch output-ch
      :input-ch input-ch
@@ -248,34 +247,8 @@
      :pending-requests* (atom {})
      :join (promise)}))
 
-#_{:clj-kondo/ignore [:clojure-lsp/unused-public-var]}
-(defn stdio-server [{:keys [in out] :as opts}]
+(defn stdio-server
+  [{:keys [in out] :as opts}]
   (chan-server (assoc opts
                       :input-ch (json-rpc/input-stream->input-chan in)
                       :output-ch (json-rpc/output-stream->output-chan out))))
-
-(defn init-socket-server [{:keys [address port]}]
-  (json-rpc/start-socket-server {:address address
-                                 :port (if (string? port) (parse-long port) port)}))
-
-#_{:clj-kondo/ignore [:clojure-lsp/unused-public-var]}
-(defn socket-server
-  "Starts listening on the address (loopback by default) and port. Blocks until
-  a client establishes a connection, then returns a chan-server which
-  communicates over the socket."
-  [{:keys [_address _port] :as opts}]
-  (let [{:keys [^ServerSocket socket-server on-connect]}
-        (or (:socket-data opts) ;; mostly for tests
-            (init-socket-server opts))
-        [^Socket conn input-ch output-ch] @on-connect
-        ;; NOTE: When the chan-server is shutdown, the input-ch and output-ch
-        ;; will also close. Eventually this will close the conn too, so
-        ;; re-closing it is probably unnecessary. Regardless, we should close
-        ;; the socket-server too.
-        on-close #(do
-                    (.close conn)
-                    (.close socket-server))]
-    (chan-server (assoc opts
-                        :input-ch input-ch
-                        :output-ch output-ch
-                        :on-close on-close))))

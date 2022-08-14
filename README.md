@@ -97,10 +97,10 @@ When a server shuts down it stops reading input, finishes processing the message
 
 ### Socket server
 
-The `stdio-server` is the most commonly used, but the library also provides a `lsp4clj.server/socket-server`.
+The `stdio-server` is the most commonly used, but the library also provides a `lsp4clj.socket-server/server`.
 
 ```clojure
-(lsp4clj.server/socket-server {:port 61235})
+(lsp4clj.socket-server/server {:port 61235})
 ```
 
 This will start listening on the provided port, blocking until a client makes a connection. When the connection is made it returns a lsp4clj server that has the same behavior as a `stdio-server`, except that messages are exchanged over the socket. When the server is shut down, the connection will be closed.
@@ -130,7 +130,7 @@ You may also find `lsp4clj.server/chan-server` a useful alternative to `stdio-se
 
 ## Caveats
 
-You must not print to stdout while a `stdio-server` is running. This will corrupt its output stream and clients will receive malformed messages. To protect a block of code from writing to stdout, wrap it with `lsp4clj.server/discarding-stdout`. The `receive-notification` and `receive-request` multimethods are already protected this way, but tasks started outside of these multimethods need this protection added. Consider using a `lsp4clj.server/socket-server` to avoid this problem.
+You must not print to stdout while a `stdio-server` is running. This will corrupt its output stream and clients will receive malformed messages. To protect a block of code from writing to stdout, wrap it with `lsp4clj.server/discarding-stdout`. The `receive-notification` and `receive-request` multimethods are already protected this way, but tasks started outside of these multimethods need this protection added. Consider using a `lsp4clj.socket-server/server` to avoid this problem.
 
 ## Known lsp4clj users
 

@@ -9,8 +9,7 @@
    [clojure.core.async :as async]
    [clojure.string :as string])
   (:import
-   [java.io EOFException InputStream OutputStream]
-   [java.net InetAddress ServerSocket SocketException]))
+   [java.io EOFException InputStream OutputStream]))
 
 (set! *warn-on-reflection* true)
 
@@ -117,26 +116,3 @@
             (write-message writer msg)
             (recur)))))
     messages))
-
-(defn start-socket-server
-  "Start a socket server, given the specified opts:
-    :address Host or address, string, defaults to loopback address
-    :port Port, integer, required
-
-  Returns a map containing the :socket-server and :on-connect, which can be
-  dereffed. When a client establishes a connection, the deref will resolve to
-  the connection and two channels, an input-chan and an output-chan.
-
-  The caller is responsible for closing the socket-server, the connection, and
-  the channels."
-  [{:keys [address port]}]
-  (let [address (InetAddress/getByName address) ;; nil address returns loopback
-        server (ServerSocket. port 0 address)] ;; bind to the port
-    {:socket-server server
-     :on-connect (future
-                   (try
-                     (let [conn (.accept server)] ;; block waiting for connection
-                       [conn
-                        (input-stream->input-chan (.getInputStream conn))
-                        (output-stream->output-chan (.getOutputStream conn))])
-                     (catch SocketException _disconnect)))}))
