@@ -2,7 +2,7 @@
   (:require
    [clojure.set :as set]
    [clojure.spec.alpha :as s]
-   [lsp4clj.json-rpc.messages :as lsp.messages]))
+   [lsp4clj.lsp.errors :as lsp.errors]))
 
 (set! *warn-on-reflection* true)
 
@@ -23,8 +23,10 @@
 
 (s/def ::response-error (s/and (s/keys :req-un [::error])
                                (s/conformer
-                                 (fn [{:keys [error]}]
-                                   (lsp.messages/error-result (:code error) (:message error) (:data error))))))
+                                 (fn [resp]
+                                   (update resp :error
+                                           (fn [{:keys [code message data]}]
+                                             (lsp.errors/body code message data)))))))
 
 (s/def ::line (s/and integer? (s/conformer int)))
 (s/def ::character (s/and integer? (s/conformer int)))
@@ -406,4 +408,4 @@
           (log "Conformation error" (s/explain-data spec value))
           result))
       (catch Exception ex
-        (log "Conformation exception" ex spec value)))))
+        (log ex "Conformation exception" spec value)))))

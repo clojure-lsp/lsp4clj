@@ -3,7 +3,8 @@
    [clojure.core.async :as async]
    [clojure.string :as string]
    [clojure.test :refer [deftest is testing]]
-   [lsp4clj.json-rpc.messages :as messages]
+   [lsp4clj.lsp.requests :as lsp.requests]
+   [lsp4clj.lsp.responses :as lsp.responses]
    [lsp4clj.server :as server]
    [lsp4clj.test-helper :as h]))
 
@@ -12,7 +13,7 @@
         output-ch (async/chan 3)
         server (server/chan-server {:output-ch output-ch
                                     :input-ch input-ch})]
-    (async/put! input-ch (messages/request 1 "foo" {}))
+    (async/put! input-ch (lsp.requests/request 1 "foo" {}))
     (server/start server nil)
     (h/assert-take output-ch)
     (server/shutdown server)))
@@ -23,7 +24,7 @@
         server (server/chan-server {:output-ch output-ch
                                     :input-ch input-ch})]
     (server/start server nil)
-    (async/put! input-ch (messages/request 2 "bar" {}))
+    (async/put! input-ch (lsp.requests/request 2 "bar" {}))
     (server/shutdown server)
     (h/assert-take output-ch)))
 
@@ -56,7 +57,7 @@
         _ (server/start server nil)
         req (server/send-request server "req" {:body "foo"})
         client-rcvd-msg (h/assert-take output-ch)]
-    (async/put! input-ch (messages/response (:id client-rcvd-msg) {:processed true}))
+    (async/put! input-ch (lsp.responses/response (:id client-rcvd-msg) {:processed true}))
     (is (= {:processed true} (server/deref-or-cancel req 1000 :test-timeout)))
     (server/shutdown server)))
 
@@ -66,7 +67,7 @@
         server (server/chan-server {:output-ch output-ch
                                     :input-ch input-ch})]
     (server/start server nil)
-    (async/put! input-ch (messages/request 1 "foo" {}))
+    (async/put! input-ch (lsp.requests/request 1 "foo" {}))
     (is (= 1 (:id (h/assert-take output-ch))))
     (server/shutdown server)))
 
@@ -76,7 +77,7 @@
         server (server/chan-server {:output-ch output-ch
                                     :input-ch input-ch})]
     (server/start server nil)
-    (async/put! input-ch (messages/request 1 "foo" {}))
+    (async/put! input-ch (lsp.requests/request 1 "foo" {}))
     (is (= {:jsonrpc "2.0"
             :id 1
             :error {:code -32601, :message "Method not found", :data {:method "foo"}}}
@@ -105,7 +106,7 @@
         _ (server/start server nil)
         req (server/send-request server "req" {:body "foo"})
         client-rcvd-msg (h/assert-take output-ch)]
-    (async/put! input-ch (messages/response (:id client-rcvd-msg) {:processed true}))
+    (async/put! input-ch (lsp.responses/response (:id client-rcvd-msg) {:processed true}))
     (is (= {:processed true} (server/deref-or-cancel req 1000 :test-timeout)))
     (h/assert-no-take output-ch)
     (is (not (future-cancel req)))
@@ -145,7 +146,7 @@
           _ (server/start server nil)
           req (server/send-request server "req" {:body "foo"})
           client-rcvd-msg (h/assert-take output-ch)]
-      (async/put! input-ch (messages/response (:id client-rcvd-msg) {:processed true}))
+      (async/put! input-ch (lsp.responses/response (:id client-rcvd-msg) {:processed true}))
       (is (= {:processed true} (server/deref-or-cancel req 1000 :test-timeout)))
       (is (realized? req))
       (is (future-done? req))
@@ -183,7 +184,7 @@
           _ (server/start server nil)
           req (server/send-request server "req" {:body "foo"})
           client-rcvd-msg (h/assert-take output-ch)]
-      (async/put! input-ch (messages/response (:id client-rcvd-msg) {:processed true}))
+      (async/put! input-ch (lsp.responses/response (:id client-rcvd-msg) {:processed true}))
       (is (= {:processed true} (.get req 100 java.util.concurrent.TimeUnit/MILLISECONDS)))
       (server/shutdown server)))
   (testing "after cancellation"
@@ -215,7 +216,7 @@
                                     :clock fixed-clock})
         trace-ch (:trace-ch server)]
     (server/start server nil)
-    (async/put! input-ch (messages/request "foo" {:result "body"}))
+    (async/put! input-ch (lsp.requests/notification "foo" {:result "body"}))
     (is (= (trace-log ["[Trace - 2022-03-05T13:35:23Z] Received notification 'foo'"
                        "Params: {"
                        "  \"result\" : \"body\""
@@ -232,7 +233,7 @@
                                     :clock fixed-clock})
         trace-ch (:trace-ch server)]
     (server/start server nil)
-    (async/put! input-ch (messages/request 1 "foo" {:result "body"}))
+    (async/put! input-ch (lsp.requests/request 1 "foo" {:result "body"}))
     (is (= (trace-log ["[Trace - 2022-03-05T13:35:23Z] Received request 'foo - (1)'"
                        "Params: {"
                        "  \"result\" : \"body\""
@@ -261,7 +262,7 @@
                        "  \"body\" : \"foo\""
                        "}"])
            (h/assert-take trace-ch)))
-    (async/put! input-ch (messages/response (:id client-rcvd-msg) {:processed true}))
+    (async/put! input-ch (lsp.responses/response (:id client-rcvd-msg) {:processed true}))
     (is (= (trace-log ["[Trace - 2022-03-05T13:35:23Z] Received response 'req - (1)'. Request took 0ms."
                        "Result: {"
                        "  \"processed\" : true"
@@ -286,8 +287,10 @@
                        "}"])
            (h/assert-take trace-ch)))
     (async/put! input-ch
-                (messages/response (:id client-rcvd-msg)
-                                   {:error {:code 1234 :message "Something bad" :data {:body "foo"}}}))
+                (-> (lsp.responses/response (:id client-rcvd-msg))
+                    (lsp.responses/error {:code 1234
+                                          :message "Something bad"
+                                          :data {:body "foo"}})))
     (is (= (trace-log ["[Trace - 2022-03-05T13:35:23Z] Received response 'req - (1)'. Request took 0ms. Request failed: Something bad (1234)."
                        "Error data: {"
                        "  \"body\" : \"foo\""
@@ -304,7 +307,7 @@
                                     :clock fixed-clock})
         trace-ch (:trace-ch server)]
     (server/start server nil)
-    (async/put! input-ch (messages/response 100 {:processed true}))
+    (async/put! input-ch (lsp.responses/response 100 {:processed true}))
     (is (= (trace-log ["[Trace - 2022-03-05T13:35:23Z] Received response for unmatched request:"
                        "Body: {"
                        "  \"jsonrpc\" : \"2.0\","
@@ -340,7 +343,7 @@
                                     :input-ch input-ch})
         log-ch (:log-ch server)]
     (server/start server nil)
-    (async/put! input-ch (messages/request 1 "foo" {}))
+    (async/put! input-ch (lsp.requests/request 1 "foo" {}))
     (is (= [:warn "received unexpected request" "foo"]
            (h/assert-take log-ch)))
     (server/shutdown server)))
@@ -352,7 +355,7 @@
                                     :input-ch input-ch})
         log-ch (:log-ch server)]
     (server/start server nil)
-    (async/put! input-ch (messages/request "foo" {}))
+    (async/put! input-ch (lsp.requests/notification "foo" {}))
     (is (= [:warn "received unexpected notification" "foo"]
            (h/assert-take log-ch)))
     (server/shutdown server)))
@@ -378,7 +381,7 @@
     (server/start server nil)
     (with-redefs [server/receive-request (fn [& _args]
                                            (throw (ex-info "internal error" {:redef :data})))]
-      (async/put! input-ch (messages/request 1 "foo" {}))
+      (async/put! input-ch (lsp.requests/request 1 "foo" {}))
       (is (= {:jsonrpc "2.0",
               :id 1,
               :error {:code -32603,
@@ -400,7 +403,7 @@
     (server/start server nil)
     (with-redefs [server/receive-notification (fn [& _args]
                                                 (throw (ex-info "internal error" {:redef :data})))]
-      (async/put! input-ch (messages/request "foo" {}))
+      (async/put! input-ch (lsp.requests/notification "foo" {}))
       (h/assert-no-take output-ch))
     (let [[level e message] (h/assert-take log-ch)]
       (is (= :error level))
@@ -430,7 +433,7 @@
                                     :trace-ch merged-ch
                                     :clock fixed-clock})]
     (server/start server nil)
-    (async/put! input-ch (messages/request "foo" {:result "body"}))
+    (async/put! input-ch (lsp.requests/notification "foo" {:result "body"}))
     (is (= (trace-log ["[Trace - 2022-03-05T13:35:23Z] Received notification 'foo'"
                        "Params: {"
                        "  \"result\" : \"body\""

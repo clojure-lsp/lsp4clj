@@ -3,7 +3,9 @@
    [clojure.core.async :as async]
    [clojure.pprint :as pprint]
    [lsp4clj.coercer :as coercer]
-   [lsp4clj.json-rpc.messages :as json-rpc.messages]
+   [lsp4clj.lsp.errors :as lsp.errors]
+   [lsp4clj.lsp.requests :as lsp.requests]
+   [lsp4clj.lsp.responses :as lsp.responses]
    [lsp4clj.protocols.endpoint :as protocols.endpoint]
    [lsp4clj.trace :as trace]))
 
@@ -96,7 +98,7 @@
                         :server server}))
 
 (defn ^:private format-error-code [description error-code]
-  (let [{:keys [code message]} (json-rpc.messages/error-codes error-code)]
+  (let [{:keys [code message]} (lsp.errors/by-key error-code)]
     (format "%s: %s (%s)" description message code)))
 
 (defn ^:private receive-message
@@ -122,9 +124,8 @@
           (protocols.endpoint/log server :error e (str (format-error-code "Error receiving message" :internal-error) "\n"
                                                        message-basics))
           (when request?
-            (->> message-basics
-                 (json-rpc.messages/standard-error-result :internal-error)
-                 (json-rpc.messages/response (:id message)))))))))
+            (-> (lsp.responses/response (:id message))
+                (lsp.responses/error (lsp.errors/internal-error message-basics)))))))))
 
 ;; Expose endpoint methods to language servers
 
@@ -189,7 +190,7 @@
   (send-request [this method body]
     (let [id (swap! request-id* inc)
           now (.instant clock)
-          req (json-rpc.messages/request id method body)
+          req (lsp.requests/request id method body)
           pending-request (pending-request id method now this)]
       (some-> trace-ch (async/put! (trace/sending-request req now)))
       ;; Important: record request before sending it, so it is sure to be
@@ -200,7 +201,7 @@
       pending-request))
   (send-notification [_this method body]
     (let [now (.instant clock)
-          notif (json-rpc.messages/request method body)]
+          notif (lsp.requests/notification method body)]
       (some-> trace-ch (async/put! (trace/sending-notification notif now)))
       ;; respect back pressure from clients that are slow to read; (go (>!)) will not suffice
       (async/>!! output-ch notif)))
@@ -215,13 +216,13 @@
   (receive-request [this context {:keys [id method params] :as req}]
     (let [started (.instant clock)]
       (some-> trace-ch (async/put! (trace/received-request req started)))
-      (let [result (let [result (receive-request method context params)]
-                     (if (identical? ::method-not-found result)
-                       (do
-                         (protocols.endpoint/log this :warn "received unexpected request" method)
-                         (json-rpc.messages/standard-error-result :method-not-found {:method method}))
-                       result))
-            resp (json-rpc.messages/response id result)
+      (let [result (receive-request method context params)
+            resp (lsp.responses/response id)
+            resp (if (identical? ::method-not-found result)
+                   (do
+                     (protocols.endpoint/log this :warn "received unexpected request" method)
+                     (lsp.responses/error resp (lsp.errors/not-found method)))
+                   (lsp.responses/infer resp result))
             finished (.instant clock)]
         (some-> trace-ch (async/put! (trace/sending-response req resp started finished)))
         resp)))

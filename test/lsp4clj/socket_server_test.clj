@@ -3,7 +3,7 @@
    [clojure.core.async :as async]
    [clojure.test :refer [deftest is]]
    [lsp4clj.io-server :as io-server]
-   [lsp4clj.json-rpc.messages :as messages]
+   [lsp4clj.lsp.requests :as lsp.requests]
    [lsp4clj.server :as server]
    [lsp4clj.socket-server :as socket-server]
    [lsp4clj.test-helper :as h])
@@ -34,7 +34,7 @@
               server @server*
               join (server/start server nil)]
           (try
-            (async/put! client-output-ch (messages/request 1 "foo" {}))
+            (async/put! client-output-ch (lsp.requests/request 1 "foo" {}))
             (is (= {:jsonrpc "2.0",
                     :id 1,
                     :error {:code -32601,
