@@ -3,7 +3,6 @@
    [clojure.core.async :as async]
    [clojure.pprint :as pprint]
    [lsp4clj.coercer :as coercer]
-   [lsp4clj.json-rpc :as json-rpc]
    [lsp4clj.json-rpc.messages :as json-rpc.messages]
    [lsp4clj.protocols.endpoint :as protocols.endpoint]
    [lsp4clj.trace :as trace]))
@@ -246,13 +245,3 @@
      :request-id* (atom 0)
      :pending-requests* (atom {})
      :join (promise)}))
-
-#_{:clj-kondo/ignore [:clojure-lsp/unused-public-var]}
-(defn stdio-server
-  "DEPRECATED: Will be removed in a future release. Prefer
-  lsp4clj.io-server/server or lsp4clj.io-server/stdio-server."
-  {:deprecated "Use lsp4clj.io-server/server instead"}
-  [{:keys [in out] :as opts}]
-  (chan-server (assoc opts
-                      :input-ch (json-rpc/input-stream->input-chan in)
-                      :output-ch (json-rpc/output-stream->output-chan out))))
