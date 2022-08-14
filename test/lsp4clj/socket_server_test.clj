@@ -8,7 +8,9 @@
    [lsp4clj.socket-server :as socket-server]
    [lsp4clj.test-helper :as h])
   (:import
-   [java.net Socket]))
+   [java.net ServerSocket Socket]))
+
+(set! *warn-on-reflection* true)
 
 (deftest should-communicate-through-socket
   (let [;; NOTE: In real-life, you'd replace the following two lines with
@@ -23,7 +25,7 @@
         ;; 2. We want to use an ephemeral port, which is what `{:port 0}` is
         ;;    about. But the port we are assigned is exposed only through the
         ;;    socket-data.
-        {:keys [socket], :as socket-data} (socket-server/bind-socket {:port 0})
+        {:keys [^ServerSocket socket], :as socket-data} (socket-server/bind-socket {:port 0})
         server* (future (socket-server/server {} socket-data))]
     (try
       (with-open [client (Socket. (.getInetAddress socket) (.getLocalPort socket))]
