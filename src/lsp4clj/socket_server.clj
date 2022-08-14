@@ -1,19 +1,16 @@
 (ns lsp4clj.socket-server
-  (:require [lsp4clj.server :as server])
+  (:require
+   [lsp4clj.server :as server])
   (:import
-   [java.net
-    InetAddress
-    ServerSocket
-    Socket
-    SocketException]))
+   [java.net InetAddress ServerSocket Socket]))
 
 (set! *warn-on-reflection* true)
 
 (defn bind-socket
-  "Binds to the `address` (string, loopback by default) and `port` (integer,
+  "Binds to the `:address` (string, loopback by default) and `:port` (integer,
   required).
 
-  Returns a map containing the :socket (a ServerSocket) and a :connection, a
+  Returns a map containing the `:socket` (a ServerSocket) and a `:connection`, a
   future which will resolve (to a Socket) when a client connects.
 
   The caller is responsible for closing the socket and the connection."
@@ -21,15 +18,12 @@
   (let [address (InetAddress/getByName address) ;; nil address returns loopback
         socket (ServerSocket. port 0 address)] ;; bind to the port
     {:socket socket
-     :connection (future
-                   (try
-                     (.accept socket)
-                     (catch SocketException _disconnect)))}))
+     :connection (future (.accept socket))}))
 
 (defn server
   "Start a socket server, given the specified opts:
-    :address Host or address, string, defaults to loopback address
-    :port Port, string or integer, required
+    `:address` Host or address, string, defaults to loopback address
+    `:port` Port, string or integer, required
 
   Starts listening on the socket, blocks until a client establishes a
   connection, then returns a chan-server which communicates over the socket."
