@@ -2,7 +2,11 @@
 
 ## Unreleased
 
+- Support communication through a socket, as an alternative to stdio. #1
+
 ## v1.0.1
+
+- Fix input coercion of completion items, so they can be roundtripped through `completionItem/resolve`. #15
 
 ## v1.0.0
 

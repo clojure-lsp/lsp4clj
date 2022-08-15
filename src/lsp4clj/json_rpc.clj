@@ -7,18 +7,20 @@
    [camel-snake-kebab.extras :as cske]
    [cheshire.core :as json]
    [clojure.core.async :as async]
-   [clojure.string :as string]))
+   [clojure.string :as string])
+  (:import
+   [java.io EOFException InputStream OutputStream]))
 
 (set! *warn-on-reflection* true)
 
-(defn ^:private read-n-bytes [^java.io.InputStream input content-length charset-s]
+(defn ^:private read-n-bytes [^InputStream input content-length charset-s]
   (let [buffer (byte-array content-length)]
     (loop [total-read 0]
       (when (< total-read content-length)
         (let [new-read (.read input buffer total-read (- content-length total-read))]
           (when (< new-read 0)
             ;; TODO: return nil instead?
-            (throw (java.io.EOFException.)))
+            (throw (EOFException.)))
           (recur (+ total-read new-read)))))
     (String. ^bytes buffer ^String charset-s)))
 
@@ -50,7 +52,7 @@
 
 (def ^:private write-lock (Object.))
 
-(defn ^:private write-message [^java.io.OutputStream output msg]
+(defn ^:private write-message [^OutputStream output msg]
   (let [content (json/generate-string (cske/transform-keys kw->camelCaseString msg))
         content-bytes (.getBytes content "utf-8")]
     (locking write-lock
@@ -63,7 +65,7 @@
 
 (defn ^:private read-header-line
   "Reads a line of input. Blocks if there are no messages on the input."
-  [^java.io.InputStream input]
+  [^InputStream input]
   (let [s (java.lang.StringBuilder.)]
     (loop []
       (let [b (.read input)] ;; blocks, presumably waiting for next message
@@ -81,8 +83,8 @@
 
   Reads in a thread to avoid blocking a go block thread."
   ([input] (input-stream->input-chan input {}))
-  ([^java.io.InputStream input {:keys [close? keyword-function]
-                                :or {close? true, keyword-function csk/->kebab-case-keyword}}]
+  ([^InputStream input {:keys [close? keyword-function]
+                        :or {close? true, keyword-function csk/->kebab-case-keyword}}]
    (let [messages (async/chan 1)]
      (async/thread
        (loop [headers {}]
@@ -105,7 +107,7 @@
   channel is closed, closes the output.
 
   Writes in a thread to avoid blocking a go block thread."
-  [^java.io.OutputStream output]
+  [^OutputStream output]
   (let [messages (async/chan 1)]
     (async/thread
       (with-open [writer output] ;; close output when channel closes
