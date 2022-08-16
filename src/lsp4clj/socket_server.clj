@@ -1,6 +1,6 @@
 (ns lsp4clj.socket-server
   (:require
-   [lsp4clj.server :as server])
+   [lsp4clj.io-server :as io-server])
   (:import
    [java.net InetAddress ServerSocket Socket]))
 
@@ -41,7 +41,7 @@
          on-close #(do
                      (.close conn)
                      (.close socket))]
-     (server/stdio-server (assoc opts
-                                 :in (.getInputStream conn)
-                                 :out (.getOutputStream conn)
-                                 :on-close on-close)))))
+     (io-server/server (assoc opts
+                              :in (.getInputStream conn)
+                              :out (.getOutputStream conn)
+                              :on-close on-close)))))
