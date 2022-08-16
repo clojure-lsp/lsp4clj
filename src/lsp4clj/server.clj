@@ -251,7 +251,7 @@
 (defn stdio-server
   "DEPRECATED: Will be removed in a future release. Prefer
   lsp4clj.io-server/server or lsp4clj.io-server/stdio-server."
-  {:deprecated true}
+  {:deprecated "Use lsp4clj.io-server/server instead"}
   [{:keys [in out] :as opts}]
   (chan-server (assoc opts
                       :input-ch (json-rpc/input-stream->input-chan in)
