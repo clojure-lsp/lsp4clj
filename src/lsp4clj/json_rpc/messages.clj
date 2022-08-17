@@ -1,4 +1,7 @@
-(ns lsp4clj.json-rpc.messages)
+(ns lsp4clj.json-rpc.messages
+  (:require
+   [camel-snake-kebab.core :as csk]
+   [camel-snake-kebab.extras :as cske]))
 
 (set! *warn-on-reflection* true)
 
@@ -51,6 +54,9 @@
   [code-name data]
   (error-result code-name nil data))
 
+;; TODO: The following are helpers used by servers, but not by lsp4clj itself.
+;; Perhaps they belong in a utils namespace.
+
 #_{:clj-kondo/ignore [:clojure-lsp/unused-public-var]}
 (defn work-done-progress [percentage message progress-token]
   (let [percentage (int percentage)
@@ -62,3 +68,12 @@
                   :percentage percentage}]
     {:token (or progress-token "lsp4clj")
      :value progress}))
+
+#_{:clj-kondo/ignore [:clojure-lsp/unused-public-var]}
+(defn preserve-kebab-case
+  "Recursively convert map keywords to kebab-case strings, to avoid automatic
+  camelCase conversion. This is useful for servers when the client expects
+  Clojure style JSON, or when a map needs to be round-tripped from the server to
+  the client and back without case changes."
+  [m]
+  (cske/transform-keys csk/->kebab-case-string m))
