@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+## v1.1.0
+
 - Support communication through a socket, as an alternative to stdio. #1
 - Deprecate `lsp4clj.server/stdio-server`. Use the identical `lsp4clj.io-server/server` or `lsp4clj.io-server/stdio-server` instead.
 
