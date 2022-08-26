@@ -70,6 +70,29 @@
     (is (= 1 (:id (h/assert-take output-ch))))
     (server/shutdown server)))
 
+(deftest should-be-able-to-place-request-while-receiving-request
+  (let [input-ch (async/chan 3)
+        output-ch (async/chan 3)
+        server (server/chan-server {:output-ch output-ch
+                                    :input-ch input-ch})]
+    (server/start server nil)
+    (with-redefs [server/receive-request (fn [method _context _params]
+                                           (is (= "initialize" method))
+                                           (let [req (server/send-request server "window/showMessageRequest" {})
+                                                 resp (server/deref-or-cancel req 100 :timeout)]
+                                             (if (= :timeout resp)
+                                               {:error :timeout}
+                                               {:client-response (:response resp)})))]
+      (async/put! input-ch (messages/request 1 "initialize" {}))
+      (let [client-rcvd-msg-1 (h/assert-take output-ch)]
+        (is (= "window/showMessageRequest" (:method client-rcvd-msg-1)))
+        (async/put! input-ch (messages/response (:id client-rcvd-msg-1) {:response "ok"}))
+        (is (= {:jsonrpc "2.0"
+                :id 1
+                :result {:client-response "ok"}}
+               (h/take-or-timeout output-ch 200)))))
+    (server/shutdown server)))
+
 (deftest should-reply-with-method-not-found-for-unexpected-messages
   (let [input-ch (async/chan 3)
         output-ch (async/chan 3)
