@@ -99,66 +99,32 @@
   (let [{:keys [code message]} (json-rpc.messages/error-codes error-code)]
     (format "%s: %s (%s)" description message code)))
 
-(defn ^:private log-error-receiving [server e message]
-  (protocols.endpoint/log server :error e
-                          (str (format-error-code "Error receiving message" :internal-error) "\n"
-                               (select-keys message [:id :method]))))
-
-(defn ^:private start-pipeline [input-ch output-ch server context]
-  ;; Fork the input off to two streams of work, the input initiated by the
-  ;; client (the client's requests and notifications) and the input initiated by
-  ;; the server (the client's responses). Process each stream one message at a
-  ;; time, but independently. The streams must be processed indepedently so that
-  ;; while receiving a request, the server can send a request and receive the
-  ;; response before sending its response to the original request. This happens,
-  ;; for example, when servers send showMessageRequest while processing a
-  ;; request they have received.
-  (let [server-initiated-ch (async/chan 1)
-        client-initiated-ch (async/chan 1)
-        pipeline
-        (async/go-loop []
-          (if-let [message (async/<! input-ch)]
-            (let [message-type (coercer/input-message-type message)]
+(defn ^:private receive-message
+  [server context message]
+  (let [message-type (coercer/input-message-type message)
+        request? (identical? :request message-type)]
+    (try
+      (let [response
+            (discarding-stdout
               (case message-type
                 (:parse-error :invalid-request)
                 (protocols.endpoint/log server :error (format-error-code "Error reading message" message-type))
-                (:request :notification)
-                (async/>! client-initiated-ch [message-type message])
+                :request
+                (protocols.endpoint/receive-request server context message)
                 (:response.result :response.error)
-                (async/>! server-initiated-ch message))
-              (recur))
-            (do
-              (async/close! client-initiated-ch)
-              (async/close! server-initiated-ch)
-              (async/close! output-ch))))]
-    ;; a thread so server can use >!! and so that we can use (>!! output-ch) to
-    ;; respect back pressure from clients that are slow to read.
-    (async/thread
-      (when-let [[message-type message] (async/<!! client-initiated-ch)]
-        (discarding-stdout
-          ;; TODO: return error until initialize response is sent?
-          ;; https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification/#initialize
-          (case message-type
-            :request
-            (async/>!! output-ch
-                       (try
-                         (protocols.endpoint/receive-request server context message)
-                         (catch Throwable e
-                           (log-error-receiving server e message)
-                           (->> (select-keys message [:id :method])
-                                (json-rpc.messages/standard-error-result :internal-error)
-                                (json-rpc.messages/response (:id message))))))
-            :notification
-            (try
-              (protocols.endpoint/receive-notification server context message)
-              (catch Throwable e
-                (log-error-receiving server e message)))))
-        (recur)))
-    (async/go-loop []
-      (when-let [message (async/<! server-initiated-ch)]
-        (protocols.endpoint/receive-response server message)
-        (recur)))
-    pipeline))
+                (protocols.endpoint/receive-response server message)
+                :notification
+                (protocols.endpoint/receive-notification server context message)))]
+        ;; Ensure server only responds to requests
+        (when request? response))
+      (catch Throwable e
+        (let [message-basics (select-keys message [:id :method])]
+          (protocols.endpoint/log server :error e (str (format-error-code "Error receiving message" :internal-error) "\n"
+                                                       message-basics))
+          (when request?
+            (->> message-basics
+                 (json-rpc.messages/standard-error-result :internal-error)
+                 (json-rpc.messages/response (:id message)))))))))
 
 ;; Expose endpoint methods to language servers
 
@@ -192,7 +158,13 @@
                        join]
   protocols.endpoint/IEndpoint
   (start [this context]
-    (let [pipeline (start-pipeline input-ch output-ch this context)]
+    (let [pipeline (async/pipeline-blocking
+                     1 ;; no parallelism, to preserve order of client messages
+                     output-ch
+                     ;; TODO: return error until initialize request is received? https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification/#initialize
+                     ;; `keep` means we do not reply to responses and notifications
+                     (keep #(receive-message this context %))
+                     input-ch)]
       (async/go
         ;; Wait for pipeline to close. This indicates input-ch was closed and
         ;; that now output-ch is closed.

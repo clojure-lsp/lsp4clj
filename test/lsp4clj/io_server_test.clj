@@ -13,7 +13,7 @@
 (defn ^:private message-lines [arr]
   (string/join "\r\n" arr))
 
-(defn mock-input-stream [^String input]
+(defn mock-input-stream [input]
   (java.io.ByteArrayInputStream. (.getBytes input "utf-8")))
 
 (deftest output-stream-should-camel-case-output
