@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+## v1.2.1
+
 - Split server and chan related ns into their own ns.
 
 ## v1.2.0
