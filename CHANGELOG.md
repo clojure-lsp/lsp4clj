@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+- Deprecate and remove `lsp4clj.json-rpc.messages`. Use `lsp4clj.lsp.requests` or `lsp4clj.lsp.responses` instead.
+- Fix handling of responses during the process of other requests at the same time.
+
 ## v1.1.0
 
 - Support communication through a socket, as an alternative to stdio. #1
