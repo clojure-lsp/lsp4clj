@@ -2,7 +2,7 @@
   (:require
    [clojure.core.async :as async]
    [clojure.test :refer [deftest is]]
-   [lsp4clj.io-server :as io-server]
+   [lsp4clj.io-chan :as io-chan]
    [lsp4clj.lsp.requests :as lsp.requests]
    [lsp4clj.server :as server]
    [lsp4clj.socket-server :as socket-server]
@@ -29,8 +29,8 @@
         server* (future (socket-server/server {} socket-data))]
     (try
       (with-open [client (Socket. (.getInetAddress socket) (.getLocalPort socket))]
-        (let [client-input-ch (io-server/input-stream->input-chan (.getInputStream client))
-              client-output-ch (io-server/output-stream->output-chan (.getOutputStream client))
+        (let [client-input-ch (io-chan/input-stream->input-chan (.getInputStream client))
+              client-output-ch (io-chan/output-stream->output-chan (.getOutputStream client))
               server @server*
               join (server/start server nil)]
           (try

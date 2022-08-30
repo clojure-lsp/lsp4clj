@@ -84,10 +84,10 @@
                                              (if (= :timeout resp)
                                                {:error :timeout}
                                                {:client-response (:response resp)})))]
-      (async/put! input-ch (messages/request 1 "initialize" {}))
+      (async/put! input-ch (lsp.requests/request 1 "initialize" {}))
       (let [client-rcvd-msg-1 (h/assert-take output-ch)]
         (is (= "window/showMessageRequest" (:method client-rcvd-msg-1)))
-        (async/put! input-ch (messages/response (:id client-rcvd-msg-1) {:response "ok"}))
+        (async/put! input-ch (lsp.responses/response (:id client-rcvd-msg-1) {:response "ok"}))
         (is (= {:jsonrpc "2.0"
                 :id 1
                 :result {:client-response "ok"}}
