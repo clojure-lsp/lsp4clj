@@ -134,26 +134,27 @@
     ;; a thread so server can use >!! and so that we can use (>!! output-ch) to
     ;; respect back pressure from clients that are slow to read.
     (async/thread
-      (when-let [[message-type message] (async/<!! client-initiated-ch)]
-        (discarding-stdout
-          ;; TODO: return error until initialize response is sent?
-          ;; https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification/#initialize
-          (case message-type
-            :request
-            (async/>!! output-ch
-                       (try
-                         (protocols.endpoint/receive-request server context message)
-                         (catch Throwable e
-                           (log-error-receiving server e message)
-                           (->> (select-keys message [:id :method])
-                                (json-rpc.messages/standard-error-result :internal-error)
-                                (json-rpc.messages/response (:id message))))))
-            :notification
-            (try
-              (protocols.endpoint/receive-notification server context message)
-              (catch Throwable e
-                (log-error-receiving server e message)))))
-        (recur)))
+      (discarding-stdout
+        (loop []
+          (when-let [[message-type message] (async/<!! client-initiated-ch)]
+            ;; TODO: return error until initialize response is sent?
+            ;; https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification/#initialize
+            (case message-type
+              :request
+              (async/>!! output-ch
+                         (try
+                           (protocols.endpoint/receive-request server context message)
+                           (catch Throwable e
+                             (log-error-receiving server e message)
+                             (->> (select-keys message [:id :method])
+                                  (json-rpc.messages/standard-error-result :internal-error)
+                                  (json-rpc.messages/response (:id message))))))
+              :notification
+              (try
+                (protocols.endpoint/receive-notification server context message)
+                (catch Throwable e
+                  (log-error-receiving server e message))))
+            (recur)))))
     (async/go-loop []
       (when-let [message (async/<! server-initiated-ch)]
         (protocols.endpoint/receive-response server message)
