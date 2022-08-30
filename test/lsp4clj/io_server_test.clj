@@ -4,7 +4,7 @@
    [clojure.string :as string]
    [clojure.test :refer [deftest is testing]]
    [lsp4clj.io-server :as io-server]
-   [lsp4clj.json-rpc.messages :as messages]
+   [lsp4clj.lsp.requests :as lsp.requests]
    [lsp4clj.server :as server]
    [lsp4clj.test-helper :as h]))
 
@@ -126,7 +126,7 @@
         client-output-ch (io-server/output-stream->output-chan client-output-stream)
         join (server/start server nil)]
     ;; client initiates request
-    (async/put! client-output-ch (messages/request 1 "foo" {}))
+    (async/put! client-output-ch (lsp.requests/request 1 "foo" {}))
     ;; server responds
     (is (= {:jsonrpc "2.0",
             :id 1,
