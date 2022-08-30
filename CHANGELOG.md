@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Split server and chan related ns into their own ns.
+
 ## v1.2.0
 
 - Deprecate and remove `lsp4clj.json-rpc.messages`. Use `lsp4clj.lsp.requests` or `lsp4clj.lsp.responses` instead.
