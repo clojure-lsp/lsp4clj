@@ -28,7 +28,7 @@
   Starts listening on the socket, blocks until a client establishes a
   connection, then returns a chan-server which communicates over the socket."
   ([{:keys [address port] :as opts}]
-   (let [port (if (string? port) (parse-long port) port)]
+   (let [port (if (string? port) (Long/valueOf ^String port) port)]
      (server opts (bind-socket {:address address
                                 :port port}))))
   ([opts {:keys [^ServerSocket socket connection]}] ;; this arity is mostly for tests

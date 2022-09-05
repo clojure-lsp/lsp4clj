@@ -42,7 +42,7 @@
 
 (defn ^:private read-message [input headers keyword-function]
   (try
-    (let [content-length (parse-long (get headers "Content-Length"))
+    (let [content-length (Long/valueOf ^String (get headers "Content-Length"))
           charset-s (parse-charset (get headers "Content-Type"))
           content (read-n-bytes input content-length charset-s)]
       (json/parse-string content keyword-function))
