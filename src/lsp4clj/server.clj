@@ -24,6 +24,11 @@
   `(binding [*out* null-output-stream-writer]
      ~@body))
 
+(defn ^:private deref? [message]
+  (or (instance? clojure.lang.IDeref message)
+      ;; (instance? java.util.concurrent.Future x) == (future? x)
+      (future? message)))
+
 (defprotocol IBlockingDerefOrCancel
   (deref-or-cancel [this timeout-ms timeout-val]))
 
@@ -117,6 +122,7 @@
   ;; request they have received.
   (let [server-initiated-ch (async/chan 1)
         client-initiated-ch (async/chan 1)
+        req-resp-ch (async/chan 1)
         pipeline
         (async/go-loop []
           (if-let [message (async/<! input-ch)]
@@ -130,6 +136,7 @@
                 (async/>! server-initiated-ch message))
               (recur))
             (do
+              (async/close! req-resp-ch)
               (async/close! client-initiated-ch)
               (async/close! server-initiated-ch)
               (async/close! output-ch))))]
@@ -143,13 +150,11 @@
             ;; https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification/#initialize
             (case message-type
               :request
-              (async/>!! output-ch
-                         (try
-                           (protocols.endpoint/receive-request server context message)
-                           (catch Throwable e
-                             (log-error-receiving server e message)
-                             (-> (lsp.responses/response (:id message))
-                                 (lsp.responses/error (lsp.errors/internal-error (select-keys message [:id :method])))))))
+              ;; Request processing Stage 1:
+              ;; Receive the requests in series. See Stage 2 in ChanServer.
+              (async/>!! req-resp-ch
+                         [message
+                          (protocols.endpoint/receive-request server context message)])
               :notification
               (try
                 (protocols.endpoint/receive-notification server context message)
@@ -160,6 +165,30 @@
       (when-let [message (async/<! server-initiated-ch)]
         (protocols.endpoint/receive-response server message)
         (recur)))
+    ;; Request processing Stage 3:
+    ;; We've received the requests in series (Stage 1). The language server has
+    ;; indicated (Stage 2) whether a request has been processed synchronously or
+    ;; should be processed in parallel. In either case, here we receive a
+    ;; dereffable response*, which can be used to realize the response's value.
+    ;; We deref the responses in parallel, in 4 threads, sending the responses
+    ;; to the output. These responses may not be output in the order they were
+    ;; received, but the language server has decided that's ok.
+    (comment
+      ;; rather than hard-coding 4, we could use the same level of parallelism
+      ;; that lsp4j was using, or rather that clojure-lsp was using by calling
+      ;; `CompletableFuture/supplyAsync`.
+      (java.util.concurrent.ForkJoinPool/getCommonPoolParallelism))
+    (async/pipeline-blocking 4 ;; allow requests to be processed in parallel
+                             output-ch
+                             (map (fn [[request response*]]
+                                    (discarding-stdout
+                                      (try
+                                        (deref response*)
+                                        (catch Throwable e
+                                          (log-error-receiving server e request)
+                                          (-> (lsp.responses/response (:id request))
+                                              (lsp.responses/error (lsp.errors/internal-error (select-keys request [:id :method])))))))))
+                             req-resp-ch)
     pipeline))
 
 ;; Expose endpoint methods to language servers
@@ -243,18 +272,39 @@
           (deliver p (if error resp result)))
         (some-> trace-ch (async/put! (trace/received-unmatched-response resp now))))))
   (receive-request [this context {:keys [id method params] :as req}]
+    ;; Request processing Stage 2:
+    ;; We are receiving requests one at a time (Stage 1). The language server
+    ;; has two options for `lsp4clj.server/receive-request`. If it calculates
+    ;; and returns a value, the request has been processed synchronously, before
+    ;; any later request. Alternatively if it returns a dereffable, it is
+    ;; indicating that the request can be processed in parallel with other
+    ;; requests (despite the spec
+    ;; https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification/#messageOrdering),
+    ;; when the delay returned by this protocol method is realized by Stage 3.
+    ;; The language server's dereffable might be a `future`, if it is
+    ;; calculating the response in a thread it controls, or it might be a
+    ;; `delay` if it wants lsp4clj to manage the thread pool. (I.e. calculate
+    ;; the response in the pipeline-blocking threadpool of Stage 3.)
     (let [started (.instant clock)]
       (some-> trace-ch (async/put! (trace/received-request req started)))
-      (let [result (receive-request method context params)
-            resp (lsp.responses/response id)
-            resp (if (identical? ::method-not-found result)
-                   (do
-                     (protocols.endpoint/log this :warn "received unexpected request" method)
-                     (lsp.responses/error resp (lsp.errors/not-found method)))
-                   (lsp.responses/infer resp result))
-            finished (.instant clock)]
-        (some-> trace-ch (async/put! (trace/sending-response req resp started finished)))
-        resp)))
+      (let [result* (try
+                      (receive-request method context params)
+                      (catch Throwable e
+                        (delay (throw e))))]
+        ;; return a response*, i.e., something that can be deref-ed to get a
+        ;; JSON-RPC response.
+        (delay
+          (let [result (if (deref? result*) (deref result*) result*)
+                resp (lsp.responses/response id)
+                resp (if (identical? ::method-not-found result)
+                       (do
+                         (protocols.endpoint/log this :warn "received unexpected request" method)
+                         (lsp.responses/error resp (lsp.errors/not-found method)))
+                       (lsp.responses/infer resp result))
+                finished (.instant clock)]
+            (some-> trace-ch (async/put! (trace/sending-response req resp started finished)))
+            resp)))))
+
   (receive-notification [this context {:keys [method params] :as notif}]
     (some-> trace-ch (async/put! (trace/received-notification notif (.instant clock))))
     (let [result (receive-notification method context params)]

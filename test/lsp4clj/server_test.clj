@@ -94,6 +94,21 @@
                (h/take-or-timeout output-ch 200)))))
     (server/shutdown server)))
 
+(deftest should-deref-delayed-responses
+  (let [input-ch (async/chan 3)
+        output-ch (async/chan 3)
+        server (server/chan-server {:output-ch output-ch
+                                    :input-ch input-ch})]
+    (server/start server nil)
+    (with-redefs [server/receive-request (fn [_method _context _params]
+                                           (delay "initialized"))]
+      (async/put! input-ch (lsp.requests/request 1 "initialize" {}))
+      (is (= {:jsonrpc "2.0"
+              :id 1
+              :result "initialized"}
+             (h/take-or-timeout output-ch 200))))
+    (server/shutdown server)))
+
 (deftest should-reply-with-method-not-found-for-unexpected-messages
   (let [input-ch (async/chan 3)
         output-ch (async/chan 3)
@@ -396,26 +411,49 @@
     (server/shutdown server)))
 
 (deftest should-log-and-respond-to-internal-errors-during-requests
-  (let [input-ch (async/chan 3)
-        output-ch (async/chan 3)
-        server (server/chan-server {:output-ch output-ch
-                                    :input-ch input-ch})
-        log-ch (:log-ch server)]
-    (server/start server nil)
-    (with-redefs [server/receive-request (fn [& _args]
-                                           (throw (ex-info "internal error" {:redef :data})))]
-      (async/put! input-ch (lsp.requests/request 1 "foo" {}))
-      (is (= {:jsonrpc "2.0",
-              :id 1,
-              :error {:code -32603,
-                      :message "Internal error",
-                      :data {:id 1, :method "foo"}}}
-             (h/assert-take output-ch))))
-    (let [[level e message] (h/assert-take log-ch)]
-      (is (= :error level))
-      (is (= {:redef :data} (ex-data e)))
-      (is (= "Error receiving message: Internal error (-32603)\n{:id 1, :method \"foo\"}" message)))
-    (server/shutdown server)))
+  (testing "when not in delay"
+    (let [input-ch (async/chan 3)
+          output-ch (async/chan 3)
+          server (server/chan-server {:output-ch output-ch
+                                      :input-ch input-ch})
+          log-ch (:log-ch server)]
+      (server/start server nil)
+      (with-redefs [server/receive-request (fn [& _args]
+                                             (throw (ex-info "internal error" {:redef :data})))]
+        (async/put! input-ch (lsp.requests/request 1 "foo" {}))
+        (is (= {:jsonrpc "2.0",
+                :id 1,
+                :error {:code -32603,
+                        :message "Internal error",
+                        :data {:id 1, :method "foo"}}}
+               (h/assert-take output-ch))))
+      (let [[level e message] (h/assert-take log-ch)]
+        (is (= :error level))
+        (is (= {:redef :data} (ex-data e)))
+        (is (= "Error receiving message: Internal error (-32603)\n{:id 1, :method \"foo\"}" message)))
+      (server/shutdown server)))
+  (testing "when in delay"
+    (let [input-ch (async/chan 3)
+          output-ch (async/chan 3)
+          server (server/chan-server {:output-ch output-ch
+                                      :input-ch input-ch})
+          log-ch (:log-ch server)]
+      (server/start server nil)
+      (with-redefs [server/receive-request (fn [& _args]
+                                             (delay
+                                               (throw (ex-info "internal error" {:redef :data}))))]
+        (async/put! input-ch (lsp.requests/request 1 "foo" {}))
+        (is (= {:jsonrpc "2.0",
+                :id 1,
+                :error {:code -32603,
+                        :message "Internal error",
+                        :data {:id 1, :method "foo"}}}
+               (h/assert-take output-ch))))
+      (let [[level e message] (h/assert-take log-ch)]
+        (is (= :error level))
+        (is (= {:redef :data} (ex-data e)))
+        (is (= "Error receiving message: Internal error (-32603)\n{:id 1, :method \"foo\"}" message)))
+      (server/shutdown server))))
 
 (deftest should-log-internal-errors-during-notifications
   (let [input-ch (async/chan 3)
