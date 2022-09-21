@@ -7,7 +7,8 @@
    [lsp4clj.lsp.requests :as lsp.requests]
    [lsp4clj.lsp.responses :as lsp.responses]
    [lsp4clj.protocols.endpoint :as protocols.endpoint]
-   [lsp4clj.trace :as trace]))
+   [lsp4clj.trace :as trace])
+  (:import [java.util.concurrent ForkJoinPool]))
 
 (set! *warn-on-reflection* true)
 
@@ -173,12 +174,7 @@
     ;; We deref the responses in parallel, in 4 threads, sending the responses
     ;; to the output. These responses may not be output in the order they were
     ;; received, but the language server has decided that's ok.
-    (comment
-      ;; rather than hard-coding 4, we could use the same level of parallelism
-      ;; that lsp4j was using, or rather that clojure-lsp was using by calling
-      ;; `CompletableFuture/supplyAsync`.
-      (java.util.concurrent.ForkJoinPool/getCommonPoolParallelism))
-    (async/pipeline-blocking 4 ;; allow requests to be processed in parallel
+    (async/pipeline-blocking (ForkJoinPool/getCommonPoolParallelism) ;; use the same level of parallelism as `CompletableFuture/supplyAsync` by default uses
                              output-ch
                              (map (fn [[request response*]]
                                     (discarding-stdout
