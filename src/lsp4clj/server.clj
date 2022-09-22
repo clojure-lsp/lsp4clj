@@ -281,24 +281,26 @@
     ;; calculating the response in a thread it controls, or it might be a
     ;; `delay` if it wants lsp4clj to manage the thread pool. (I.e. calculate
     ;; the response in the pipeline-blocking threadpool of Stage 3.)
-    (let [started (.instant clock)]
-      (some-> trace-ch (async/put! (trace/received-request req started)))
+    (let [stage-2-started (.instant clock)]
+      (some-> trace-ch (async/put! (trace/received-request req stage-2-started)))
       (let [result* (try
                       (receive-request method context params)
                       (catch Throwable e
-                        (delay (throw e))))]
+                        (delay (throw e))))
+            stage-2-finished (.instant clock)]
         ;; return a response*, i.e., something that can be deref-ed to get a
         ;; JSON-RPC response.
         (delay
-          (let [result (if (deref? result*) (deref result*) result*)
+          (let [stage-3-started (.instant clock)
+                result (if (deref? result*) (deref result*) result*)
                 resp (lsp.responses/response id)
                 resp (if (identical? ::method-not-found result)
                        (do
                          (protocols.endpoint/log this :warn "received unexpected request" method)
                          (lsp.responses/error resp (lsp.errors/not-found method)))
                        (lsp.responses/infer resp result))
-                finished (.instant clock)]
-            (some-> trace-ch (async/put! (trace/sending-response req resp started finished)))
+                stage-3-finished (.instant clock)]
+            (some-> trace-ch (async/put! (trace/sending-response req resp stage-2-started stage-2-finished stage-3-started stage-3-finished)))
             resp)))))
 
   (receive-notification [this context {:keys [method params] :as notif}]

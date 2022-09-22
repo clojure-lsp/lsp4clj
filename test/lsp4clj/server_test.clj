@@ -277,7 +277,7 @@
                        "  \"result\" : \"body\""
                        "}"])
            (h/assert-take trace-ch)))
-    (is (= (trace-log ["[Trace - 2022-03-05T13:35:23Z] Sending response 'foo - (1)'. Request took 0ms. Request failed: Method not found (-32601)."
+    (is (= (trace-log ["[Trace - 2022-03-05T13:35:23Z] Sending response 'foo - (1)'. Request took 0ms/0ms/0ms. Request failed: Method not found (-32601)."
                        "Error data: {"
                        "  \"method\" : \"foo\""
                        "}"])

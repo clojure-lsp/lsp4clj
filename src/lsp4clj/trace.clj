@@ -25,24 +25,24 @@
     (format-body "Error data" (:data error))
     (format-body "Result" result)))
 
-(defn ^:private format-trace [at action message-type header-details body]
+(defn ^:private format-trace [at direction message-type header-details body]
   [:debug
-   (str (format-tag at) " " action " " message-type " " header-details "\n"
+   (str (format-tag at) " " direction " " message-type " " header-details "\n"
         body "\n\n\n")])
 
 (defn ^:private latency [^java.time.Instant started ^java.time.Instant finished]
   (format "%sms" (- (.toEpochMilli finished) (.toEpochMilli started))))
 
-(defn ^:private format-notification [action notif at]
-  (format-trace at action "notification" (format-notification-signature notif)
+(defn ^:private format-notification [direction notif at]
+  (format-trace at direction "notification" (format-notification-signature notif)
                 (format-params notif)))
 
-(defn ^:private format-request [action req at]
-  (format-trace at action "request" (format-request-signature req)
+(defn ^:private format-request [direction req at]
+  (format-trace at direction "request" (format-request-signature req)
                 (format-params req)))
 
-(defn ^:private format-response [action req {:keys [error] :as resp} started finished]
-  (format-trace finished action "response"
+(defn ^:private format-response [direction req {:keys [error] :as resp} started finished]
+  (format-trace finished direction "response"
                 (format
                   (str "%s. Request took %s." (when error " Request failed: %s (%s)."))
                   (format-request-signature req)
@@ -55,7 +55,14 @@
 
 (defn received-notification [notif at] (format-notification "Received" notif at))
 (defn received-request [req at] (format-request "Received" req at))
-(defn received-response [req resp started finished] (format-response "Received" req resp started finished))
+(defn received-response [req {:keys [error] :as resp} started finished]
+  (format-trace finished "Received" "response"
+                (format
+                  (str "%s. Request took %s." (when error " Request failed: %s (%s)."))
+                  (format-request-signature req)
+                  (latency started finished)
+                  (:message error) (:code error))
+                (format-response-body resp)))
 
 (defn received-unmatched-response [resp at]
   (format-trace at "Received" "response" "for unmatched request:"
@@ -63,4 +70,13 @@
 
 (defn sending-notification [notif at] (format-notification "Sending" notif at))
 (defn sending-request [req at] (format-request "Sending" req at))
-(defn sending-response [req resp started finished] (format-response "Sending" req resp started finished))
+(defn sending-response [req {:keys [error] :as resp} stage-2-started stage-2-finished stage-3-started stage-3-finished]
+  (format-trace stage-3-finished "Sending" "response"
+                (format
+                  (str "%s. Request took %s/%s/%s." (when error " Request failed: %s (%s)."))
+                  (format-request-signature req)
+                  (latency stage-2-started stage-2-finished)
+                  (latency stage-2-finished stage-3-started)
+                  (latency stage-3-started stage-3-finished)
+                  (:message error) (:code error))
+                (format-response-body resp)))
