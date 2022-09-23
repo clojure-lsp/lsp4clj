@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Allow language servers to process and respond to requests in parallel.
+
 ## v1.2.2
 
 ## v1.2.1

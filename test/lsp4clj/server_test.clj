@@ -6,7 +6,8 @@
    [lsp4clj.lsp.requests :as lsp.requests]
    [lsp4clj.lsp.responses :as lsp.responses]
    [lsp4clj.server :as server]
-   [lsp4clj.test-helper :as h]))
+   [lsp4clj.test-helper :as h]
+   [promesa.core :as p]))
 
 (deftest should-process-messages-received-before-start
   (let [input-ch (async/chan 3)
@@ -78,12 +79,13 @@
                                     :input-ch input-ch})]
     (server/start server nil)
     (with-redefs [server/receive-request (fn [method _context _params]
-                                           (is (= "initialize" method))
-                                           (let [req (server/send-request server "window/showMessageRequest" {})
-                                                 resp (server/deref-or-cancel req 100 :timeout)]
-                                             (if (= :timeout resp)
-                                               {:error :timeout}
-                                               {:client-response (:response resp)})))]
+                                           (p/future
+                                             (is (= "initialize" method))
+                                             (let [req (server/send-request server "window/showMessageRequest" {})
+                                                   resp (server/deref-or-cancel req 100 :timeout)]
+                                               (if (= :timeout resp)
+                                                 {:error :timeout}
+                                                 {:client-response (:response resp)}))))]
       (async/put! input-ch (lsp.requests/request 1 "initialize" {}))
       (let [client-rcvd-msg-1 (h/assert-take output-ch)]
         (is (= "window/showMessageRequest" (:method client-rcvd-msg-1)))
@@ -92,6 +94,21 @@
                 :id 1
                 :result {:client-response "ok"}}
                (h/take-or-timeout output-ch 200)))))
+    (server/shutdown server)))
+
+(deftest should-use-deferred-responses
+  (let [input-ch (async/chan 3)
+        output-ch (async/chan 3)
+        server (server/chan-server {:output-ch output-ch
+                                    :input-ch input-ch})]
+    (server/start server nil)
+    (with-redefs [server/receive-request (fn [_method _context _params]
+                                           (p/future "initialized"))]
+      (async/put! input-ch (lsp.requests/request 1 "initialize" {}))
+      (is (= {:jsonrpc "2.0"
+              :id 1
+              :result "initialized"}
+             (h/take-or-timeout output-ch 200))))
     (server/shutdown server)))
 
 (deftest should-reply-with-method-not-found-for-unexpected-messages
@@ -105,6 +122,24 @@
             :id 1
             :error {:code -32601, :message "Method not found", :data {:method "foo"}}}
            (h/assert-take output-ch)))
+    (server/shutdown server)))
+
+(deftest should-cancel-request-when-cancellation-notification-receieved
+  (let [input-ch (async/chan 3)
+        output-ch (async/chan 3)
+        server (server/chan-server {:output-ch output-ch
+                                    :input-ch input-ch})]
+    (server/start server nil)
+    (with-redefs [server/receive-request (fn [& _args]
+                                           (p/future (Thread/sleep 1000) "foo response"))]
+      (async/put! input-ch (lsp.requests/request 1 "foo" {}))
+      (async/put! input-ch (lsp.requests/notification "$/cancelRequest" {:id 1}))
+      (is (= {:jsonrpc "2.0",
+              :id 1,
+              :error {:code -32800,
+                      :message "The request {:id 1, :method \"foo\"} has been cancelled.",
+                      :data {:id 1, :method "foo"}}}
+             (h/assert-take output-ch))))
     (server/shutdown server)))
 
 (deftest should-cancel-if-no-response-received
@@ -342,6 +377,23 @@
            (h/assert-take trace-ch)))
     (server/shutdown server)))
 
+(deftest should-trace-unmatched-cancellations
+  (let [input-ch (async/chan 3)
+        output-ch (async/chan 3)
+        server (server/chan-server {:output-ch output-ch
+                                    :input-ch input-ch
+                                    :trace? true
+                                    :clock fixed-clock})
+        trace-ch (:trace-ch server)]
+    (server/start server nil)
+    (async/put! input-ch (lsp.requests/notification "$/cancelRequest" {:id 1}))
+    (is (= (trace-log ["[Trace - 2022-03-05T13:35:23Z] Received cancellation notification for unmatched request:"
+                       "Params: {"
+                       "  \"id\" : 1"
+                       "}"])
+           (h/assert-take trace-ch)))
+    (server/shutdown server)))
+
 (deftest should-trace-sent-notifications
   (let [input-ch (async/chan 3)
         output-ch (async/chan 3)
@@ -396,26 +448,49 @@
     (server/shutdown server)))
 
 (deftest should-log-and-respond-to-internal-errors-during-requests
-  (let [input-ch (async/chan 3)
-        output-ch (async/chan 3)
-        server (server/chan-server {:output-ch output-ch
-                                    :input-ch input-ch})
-        log-ch (:log-ch server)]
-    (server/start server nil)
-    (with-redefs [server/receive-request (fn [& _args]
-                                           (throw (ex-info "internal error" {:redef :data})))]
-      (async/put! input-ch (lsp.requests/request 1 "foo" {}))
-      (is (= {:jsonrpc "2.0",
-              :id 1,
-              :error {:code -32603,
-                      :message "Internal error",
-                      :data {:id 1, :method "foo"}}}
-             (h/assert-take output-ch))))
-    (let [[level e message] (h/assert-take log-ch)]
-      (is (= :error level))
-      (is (= {:redef :data} (ex-data e)))
-      (is (= "Error receiving message: Internal error (-32603)\n{:id 1, :method \"foo\"}" message)))
-    (server/shutdown server)))
+  (testing "when not deferred"
+    (let [input-ch (async/chan 3)
+          output-ch (async/chan 3)
+          server (server/chan-server {:output-ch output-ch
+                                      :input-ch input-ch})
+          log-ch (:log-ch server)]
+      (server/start server nil)
+      (with-redefs [server/receive-request (fn [& _args]
+                                             (throw (ex-info "internal error" {:redef :data})))]
+        (async/put! input-ch (lsp.requests/request 1 "foo" {}))
+        (is (= {:jsonrpc "2.0",
+                :id 1,
+                :error {:code -32603,
+                        :message "Internal error",
+                        :data {:id 1, :method "foo"}}}
+               (h/assert-take output-ch))))
+      (let [[level e message] (h/assert-take log-ch)]
+        (is (= :error level))
+        (is (= {:redef :data} (ex-data e)))
+        (is (= "Error receiving message: Internal error (-32603)\n{:id 1, :method \"foo\"}" message)))
+      (server/shutdown server)))
+  (testing "when deferred"
+    (let [input-ch (async/chan 3)
+          output-ch (async/chan 3)
+          server (server/chan-server {:output-ch output-ch
+                                      :input-ch input-ch})
+          log-ch (:log-ch server)]
+      (server/start server nil)
+      (with-redefs [server/receive-request (fn [& _args]
+                                             (p/future
+                                               (throw (ex-info "internal error" {:redef :data}))))]
+        (async/put! input-ch (lsp.requests/request 1 "foo" {}))
+        (is (= {:jsonrpc "2.0",
+                :id 1,
+                :error {:code -32603,
+                        :message "Internal error",
+                        :data {:id 1, :method "foo"}}}
+               (h/assert-take output-ch))))
+      (let [[level e message] (h/assert-take log-ch)]
+        (is (= :error level))
+        (is (= {:redef :data} (ex-data e)))
+        (is (= "Error receiving message: Internal error (-32603)\n{:id 1, :method \"foo\"}" message)))
+      (server/shutdown server))))
 
 (deftest should-log-internal-errors-during-notifications
   (let [input-ch (async/chan 3)

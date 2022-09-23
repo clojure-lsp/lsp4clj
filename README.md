@@ -47,6 +47,8 @@ These `defmethod`s receive 3 arguments, the method name, a "context", and the `p
        (conform-or-log ::coercer/location)))
 ```
 
+Notifications will block other requests and notifications. That is, lsp4clj won't read the next request or notification sent by a client until the language server returns from `lsp4clj.server/receive-notification`. By default, requests will block other messages too. That is, if a language server wants a request to block others, it should calculate and return the response in `lsp4clj.server/receive-request`. Otherwise, to allow the response to be calculated in parallel with others, it should return a `java.util.concurrent.CompletableFuture`, possibly created with `promesa.core/future`.
+
 The return value of requests will be converted to camelCase json and returned to the client. If the return value looks like `{:error ...}`, it is assumed to indicate an error response, and the `...` part will be set as the `error` of a [JSON-RPC error object](https://www.jsonrpc.org/specification#error_object). It is up to you to conform the `...` object (by giving it a `code`, `message`, and `data`.) Otherwise, the entire return value will be set as the `result` of a [JSON-RPC response object](https://www.jsonrpc.org/specification#response_object). (Message ids are handled internally by lsp4clj.)
 
 ### Send messages

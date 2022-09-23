@@ -25,24 +25,24 @@
     (format-body "Error data" (:data error))
     (format-body "Result" result)))
 
-(defn ^:private format-trace [at action message-type header-details body]
+(defn ^:private format-trace [at direction message-type header-details body]
   [:debug
-   (str (format-tag at) " " action " " message-type " " header-details "\n"
+   (str (format-tag at) " " direction " " message-type " " header-details "\n"
         body "\n\n\n")])
 
 (defn ^:private latency [^java.time.Instant started ^java.time.Instant finished]
   (format "%sms" (- (.toEpochMilli finished) (.toEpochMilli started))))
 
-(defn ^:private format-notification [action notif at]
-  (format-trace at action "notification" (format-notification-signature notif)
+(defn ^:private format-notification [direction notif at]
+  (format-trace at direction "notification" (format-notification-signature notif)
                 (format-params notif)))
 
-(defn ^:private format-request [action req at]
-  (format-trace at action "request" (format-request-signature req)
+(defn ^:private format-request [direction req at]
+  (format-trace at direction "request" (format-request-signature req)
                 (format-params req)))
 
-(defn ^:private format-response [action req {:keys [error] :as resp} started finished]
-  (format-trace finished action "response"
+(defn ^:private format-response [direction req {:keys [error] :as resp} started finished]
+  (format-trace finished direction "response"
                 (format
                   (str "%s. Request took %s." (when error " Request failed: %s (%s)."))
                   (format-request-signature req)
@@ -57,6 +57,10 @@
 (defn received-unmatched-response [resp at]
   (format-trace at "Received" "response" "for unmatched request:"
                 (format-body "Body" resp)))
+
+(defn received-unmatched-cancellation-notification [notif at]
+  (format-trace at "Received" "cancellation notification" "for unmatched request:"
+                (format-params notif)))
 
 (defn sending-notification [notif at] (format-notification "Sending" notif at))
 (defn sending-request [req at] (format-request "Sending" req at))

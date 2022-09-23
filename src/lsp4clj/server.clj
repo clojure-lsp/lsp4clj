@@ -7,7 +7,9 @@
    [lsp4clj.lsp.requests :as lsp.requests]
    [lsp4clj.lsp.responses :as lsp.responses]
    [lsp4clj.protocols.endpoint :as protocols.endpoint]
-   [lsp4clj.trace :as trace]))
+   [lsp4clj.trace :as trace]
+   [promesa.core :as p])
+  (:import (java.util.concurrent CancellationException)))
 
 (set! *warn-on-reflection* true)
 
@@ -102,65 +104,26 @@
     (format "%s: %s (%s)" description message code)))
 
 (defn ^:private log-error-receiving [server e message]
-  (protocols.endpoint/log server :error e
-                          (str (format-error-code "Error receiving message" :internal-error) "\n"
-                               (select-keys message [:id :method]))))
+  (let [message-details (select-keys message [:id :method])
+        log-title (format-error-code "Error receiving message" :internal-error)]
+    (protocols.endpoint/log server :error e (str log-title "\n" message-details))))
 
-(defn ^:private start-pipeline [input-ch output-ch server context]
-  ;; Fork the input off to two streams of work, the input initiated by the
-  ;; client (the client's requests and notifications) and the input initiated by
-  ;; the server (the client's responses). Process each stream one message at a
-  ;; time, but independently. The streams must be processed indepedently so that
-  ;; while receiving a request, the server can send a request and receive the
-  ;; response before sending its response to the original request. This happens,
-  ;; for example, when servers send showMessageRequest while processing a
-  ;; request they have received.
-  (let [server-initiated-ch (async/chan 1)
-        client-initiated-ch (async/chan 1)
-        pipeline
-        (async/go-loop []
-          (if-let [message (async/<! input-ch)]
-            (let [message-type (coercer/input-message-type message)]
-              (case message-type
-                (:parse-error :invalid-request)
-                (protocols.endpoint/log server :error (format-error-code "Error reading message" message-type))
-                (:request :notification)
-                (async/>! client-initiated-ch [message-type message])
-                (:response.result :response.error)
-                (async/>! server-initiated-ch message))
-              (recur))
-            (do
-              (async/close! client-initiated-ch)
-              (async/close! server-initiated-ch)
-              (async/close! output-ch))))]
-    ;; a thread so server can use >!! and so that we can use (>!! output-ch) to
-    ;; respect back pressure from clients that are slow to read.
-    (async/thread
+(defn ^:private receive-message
+  [server context message]
+  (let [message-type (coercer/input-message-type message)]
+    (try
       (discarding-stdout
-        (loop []
-          (when-let [[message-type message] (async/<!! client-initiated-ch)]
-            ;; TODO: return error until initialize response is sent?
-            ;; https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification/#initialize
-            (case message-type
-              :request
-              (async/>!! output-ch
-                         (try
-                           (protocols.endpoint/receive-request server context message)
-                           (catch Throwable e
-                             (log-error-receiving server e message)
-                             (-> (lsp.responses/response (:id message))
-                                 (lsp.responses/error (lsp.errors/internal-error (select-keys message [:id :method])))))))
-              :notification
-              (try
-                (protocols.endpoint/receive-notification server context message)
-                (catch Throwable e
-                  (log-error-receiving server e message))))
-            (recur)))))
-    (async/go-loop []
-      (when-let [message (async/<! server-initiated-ch)]
-        (protocols.endpoint/receive-response server message)
-        (recur)))
-    pipeline))
+        (case message-type
+          (:parse-error :invalid-request)
+          (protocols.endpoint/log server :error (format-error-code "Error reading message" message-type))
+          :request
+          (protocols.endpoint/receive-request server context message)
+          (:response.result :response.error)
+          (protocols.endpoint/receive-response server message)
+          :notification
+          (protocols.endpoint/receive-notification server context message)))
+      (catch Throwable e ;; exceptions thrown by receive-response or receive-notification (receive-request catches its own exceptions)
+        (log-error-receiving server e message)))))
 
 ;; Expose endpoint methods to language servers
 
@@ -178,11 +141,24 @@
 
 (defmethod receive-request :default [_method _context _params] ::method-not-found)
 (defmethod receive-notification :default [_method _context _params] ::method-not-found)
-;; Servers can't implement cancellation of inbound requests themselves, because
-;; lsp4clj manages request ids. Until lsp4clj adds support, ignore cancellation
-;; requests.
-(defmethod receive-notification "$/cancelRequest" [_ _ _])
 
+(defn ^:private internal-error-response [resp req]
+  (let [error-body (lsp.errors/internal-error (select-keys req [:id :method]))]
+    (lsp.responses/error resp error-body)))
+
+(defn ^:private cancellation-response [resp req]
+  (let [message-details (select-keys req [:id :method])
+        error-body (lsp.errors/body :request-cancelled
+                                    (format "The request %s has been cancelled."
+                                            (pr-str message-details))
+                                    message-details)]
+    (lsp.responses/error resp error-body)))
+
+;; TODO: https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification/#initialize
+;; * receive-request should return error until initialize request is received
+;; * receive-notification should drop until initialize request is received, with the exception of exit
+;; * send-request should do nothing until initialize response is sent, with the exception of window/showMessageRequest
+;; * send-notification should do nothing until initialize response is sent, with the exception of window/showMessage, window/logMessage, telemetry/event, and $/progress
 (defrecord ChanServer [input-ch
                        output-ch
                        trace-ch
@@ -190,11 +166,21 @@
                        ^java.time.Clock clock
                        on-close
                        request-id*
-                       pending-requests*
+                       pending-sent-requests*
+                       pending-received-requests*
                        join]
   protocols.endpoint/IEndpoint
   (start [this context]
-    (let [pipeline (start-pipeline input-ch output-ch this context)]
+    (let [;; a thread so language server can use >!! and so that receive-message
+          ;; can use (>!! output-ch) to respect back pressure from clients that
+          ;; are slow to read.
+          pipeline (async/thread
+                     (loop []
+                       (if-let [message (async/<!! input-ch)]
+                         (do
+                           (receive-message this context message)
+                           (recur))
+                         (async/close! output-ch))))]
       (async/go
         ;; Wait for pipeline to close. This indicates input-ch was closed and
         ;; that now output-ch is closed.
@@ -224,7 +210,7 @@
       (some-> trace-ch (async/put! (trace/sending-request req now)))
       ;; Important: record request before sending it, so it is sure to be
       ;; available during receive-response.
-      (swap! pending-requests* assoc id pending-request)
+      (swap! pending-sent-requests* assoc id pending-request)
       ;; respect back pressure from clients that are slow to read; (go (>!)) will not suffice
       (async/>!! output-ch req)
       pending-request))
@@ -236,30 +222,58 @@
       (async/>!! output-ch notif)))
   (receive-response [_this {:keys [id error result] :as resp}]
     (let [now (.instant clock)
-          [pending-requests _] (swap-vals! pending-requests* dissoc id)]
+          [pending-requests _] (swap-vals! pending-sent-requests* dissoc id)]
       (if-let [{:keys [p started] :as req} (get pending-requests id)]
         (do
           (some-> trace-ch (async/put! (trace/received-response req resp started now)))
           (deliver p (if error resp result)))
         (some-> trace-ch (async/put! (trace/received-unmatched-response resp now))))))
   (receive-request [this context {:keys [id method params] :as req}]
-    (let [started (.instant clock)]
-      (some-> trace-ch (async/put! (trace/received-request req started)))
-      (let [result (receive-request method context params)
-            resp (lsp.responses/response id)
-            resp (if (identical? ::method-not-found result)
+    (let [started (.instant clock)
+          resp (lsp.responses/response id)]
+      (try
+        (some-> trace-ch (async/put! (trace/received-request req started)))
+        ;; coerce result/error to promise
+        (let [result-promise (p/promise (receive-request method context params))]
+          (swap! pending-received-requests* assoc id result-promise)
+          (-> result-promise
+              ;; convert result/error to response
+              (p/then
+                (fn [result]
+                  (if (identical? ::method-not-found result)
+                    (do
+                      (protocols.endpoint/log this :warn "received unexpected request" method)
+                      (lsp.responses/error resp (lsp.errors/not-found method)))
+                    (lsp.responses/infer resp result))))
+              ;; Handle
+              ;; 1. Exceptions thrown within p/future created by receive-request.
+              ;; 2. Cancelled requests.
+              (p/catch
+               (fn [e]
+                 (if (instance? CancellationException e)
+                   (cancellation-response resp req)
                    (do
-                     (protocols.endpoint/log this :warn "received unexpected request" method)
-                     (lsp.responses/error resp (lsp.errors/not-found method)))
-                   (lsp.responses/infer resp result))
-            finished (.instant clock)]
-        (some-> trace-ch (async/put! (trace/sending-response req resp started finished)))
-        resp)))
+                     (log-error-receiving this e req)
+                     (internal-error-response resp req)))))
+              (p/finally
+                (fn [resp _error]
+                  (swap! pending-received-requests* dissoc id)
+                  (some-> trace-ch (async/put! (trace/sending-response req resp started (.instant clock))))
+                  (async/>!! output-ch resp)))))
+        (catch Throwable e ;; exceptions thrown by receive-request
+          (log-error-receiving this e req)
+          (async/>!! output-ch (internal-error-response resp req))))))
   (receive-notification [this context {:keys [method params] :as notif}]
-    (some-> trace-ch (async/put! (trace/received-notification notif (.instant clock))))
-    (let [result (receive-notification method context params)]
-      (when (identical? ::method-not-found result)
-        (protocols.endpoint/log this :warn "received unexpected notification" method)))))
+    (let [now (.instant clock)]
+      (if (= method "$/cancelRequest")
+        (if-let [result-promise (get @pending-received-requests* (:id params))]
+          (p/cancel! result-promise)
+          (some-> trace-ch (async/put! (trace/received-unmatched-cancellation-notification notif now))))
+        (do
+          (some-> trace-ch (async/put! (trace/received-notification notif now)))
+          (let [result (receive-notification method context params)]
+            (when (identical? ::method-not-found result)
+              (protocols.endpoint/log this :warn "received unexpected notification" method))))))))
 
 (defn chan-server
   [{:keys [output-ch input-ch log-ch trace? trace-ch clock on-close]
@@ -273,5 +287,6 @@
      :clock clock
      :on-close on-close
      :request-id* (atom 0)
-     :pending-requests* (atom {})
+     :pending-sent-requests* (atom {})
+     :pending-received-requests* (atom {})
      :join (promise)}))
