@@ -61,6 +61,10 @@
   (format-trace at "Received" "response" "for unmatched request:"
                 (format-body "Body" resp)))
 
+(defn received-unmatched-cancellation-notification [notif at]
+  (format-trace at "Received" "cancellation notification" "for unmatched request:"
+                (format-params notif)))
+
 (defn sending-notification [notif at] (format-notification "Sending" notif at))
 (defn sending-request [req at] (format-request "Sending" req at))
 (defn sending-response [req resp started finished] (format-response "Sending" req resp started finished))

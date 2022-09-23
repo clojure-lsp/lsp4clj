@@ -124,6 +124,24 @@
            (h/assert-take output-ch)))
     (server/shutdown server)))
 
+(deftest should-cancel-request-when-cancellation-notification-receieved
+  (let [input-ch (async/chan 3)
+        output-ch (async/chan 3)
+        server (server/chan-server {:output-ch output-ch
+                                    :input-ch input-ch})]
+    (server/start server nil)
+    (with-redefs [server/receive-request (fn [& _args]
+                                           (p/future (Thread/sleep 1000) "foo response"))]
+      (async/put! input-ch (lsp.requests/request 1 "foo" {}))
+      (async/put! input-ch (lsp.requests/notification "$/cancelRequest" {:id 1}))
+      (is (= {:jsonrpc "2.0",
+              :id 1,
+              :error {:code -32800,
+                      :message "The request {:id 1, :method \"foo\"} has been cancelled.",
+                      :data {:id 1, :method "foo"}}}
+             (h/assert-take output-ch))))
+    (server/shutdown server)))
+
 (deftest should-cancel-if-no-response-received
   (let [input-ch (async/chan 3)
         output-ch (async/chan 3)
@@ -355,6 +373,23 @@
                        "  \"result\" : {"
                        "    \"processed\" : true"
                        "  }"
+                       "}"])
+           (h/assert-take trace-ch)))
+    (server/shutdown server)))
+
+(deftest should-trace-unmatched-cancellations
+  (let [input-ch (async/chan 3)
+        output-ch (async/chan 3)
+        server (server/chan-server {:output-ch output-ch
+                                    :input-ch input-ch
+                                    :trace? true
+                                    :clock fixed-clock})
+        trace-ch (:trace-ch server)]
+    (server/start server nil)
+    (async/put! input-ch (lsp.requests/notification "$/cancelRequest" {:id 1}))
+    (is (= (trace-log ["[Trace - 2022-03-05T13:35:23Z] Received cancellation notification for unmatched request:"
+                       "Params: {"
+                       "  \"id\" : 1"
                        "}"])
            (h/assert-take trace-ch)))
     (server/shutdown server)))
