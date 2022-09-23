@@ -154,6 +154,11 @@
                                     message-details)]
     (lsp.responses/error resp error-body)))
 
+;; TODO: https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification/#initialize
+;; * receive-request should return error until initialize request is received
+;; * receive-notification should drop until initialize request is received, with the exception of exit
+;; * send-request should do nothing until initialize response is sent, with the exception of window/showMessageRequest
+;; * send-notification should do nothing until initialize response is sent, with the exception of window/showMessage, window/logMessage, telemetry/event, and $/progress
 (defrecord ChanServer [input-ch
                        output-ch
                        trace-ch
@@ -166,7 +171,10 @@
                        join]
   protocols.endpoint/IEndpoint
   (start [this context]
-    (let [pipeline (async/thread
+    (let [;; a thread so language server can use >!! and so that receive-message
+          ;; can use (>!! output-ch) to respect back pressure from clients that
+          ;; are slow to read.
+          pipeline (async/thread
                      (loop []
                        (if-let [message (async/<!! input-ch)]
                          (do
