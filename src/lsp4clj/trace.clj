@@ -48,10 +48,7 @@
                   (format-request-signature req)
                   (latency started finished)
                   (:message error) (:code error))
-                (if (contains? #{"textDocument/semanticTokens/range" "textDocument/semanticTokens/full" "textDocument/documentSymbol"} (:method req))
-                  ;; TODO remove
-                  "<truncated>"
-                  (format-response-body resp))))
+                (format-response-body resp)))
 
 (defn received-notification [notif at] (format-notification "Received" notif at))
 (defn received-request [req at] (format-request "Received" req at))
