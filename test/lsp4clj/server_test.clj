@@ -387,7 +387,8 @@
         trace-ch (:trace-ch server)]
     (server/start server nil)
     (async/put! input-ch (lsp.requests/notification "$/cancelRequest" {:id 1}))
-    (is (= (trace-log ["[Trace - 2022-03-05T13:35:23Z] Received cancellation notification for unmatched request:"
+    (h/assert-take trace-ch) ;; trace of Received notification '$/cancelRequest'
+    (is (= (trace-log ["[Trace - 2022-03-05T13:35:23Z] Received cancellation notification for unmatched request (1):"
                        "Params: {"
                        "  \"id\" : 1"
                        "}"])
