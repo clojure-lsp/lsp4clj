@@ -59,7 +59,7 @@
                 (format-body "Body" resp)))
 
 (defn received-unmatched-cancellation-notification [notif at]
-  (format-trace at "Received" "cancellation notification" "for unmatched request:"
+  (format-trace at "Received" "cancellation notification" (format "for unmatched request (%s):" (:id (:params notif)))
                 (format-params notif)))
 
 (defn sending-notification [notif at] (format-notification "Sending" notif at))

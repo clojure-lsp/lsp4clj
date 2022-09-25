@@ -265,15 +265,14 @@
           (async/>!! output-ch (internal-error-response resp req))))))
   (receive-notification [this context {:keys [method params] :as notif}]
     (let [now (.instant clock)]
+      (some-> trace-ch (async/put! (trace/received-notification notif now)))
       (if (= method "$/cancelRequest")
         (if-let [result-promise (get @pending-received-requests* (:id params))]
           (p/cancel! result-promise)
           (some-> trace-ch (async/put! (trace/received-unmatched-cancellation-notification notif now))))
-        (do
-          (some-> trace-ch (async/put! (trace/received-notification notif now)))
-          (let [result (receive-notification method context params)]
-            (when (identical? ::method-not-found result)
-              (protocols.endpoint/log this :warn "received unexpected notification" method))))))))
+        (let [result (receive-notification method context params)]
+          (when (identical? ::method-not-found result)
+            (protocols.endpoint/log this :warn "received unexpected notification" method)))))))
 
 (defn chan-server
   [{:keys [output-ch input-ch log-ch trace? trace-ch clock on-close]
