@@ -157,7 +157,7 @@
 
 (defn trace [{:keys [tracer* trace-ch]} trace-f & params]
   (when-let [trace-body (apply trace-f @tracer* params)]
-    (async/put! trace-ch trace-body)))
+    (async/put! trace-ch [:debug trace-body])))
 
 ;; TODO: https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification/#initialize
 ;; * receive-request should return error until initialize request is received

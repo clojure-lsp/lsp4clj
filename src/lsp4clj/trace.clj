@@ -25,18 +25,6 @@
     (format-body "Error data" (:data error))
     (format-body "Result" result)))
 
-(defn ^:private format-header [at direction message-type header-details]
-  (str (format-tag at) " " direction " " message-type " " header-details))
-
-(defn ^:private basic-trace [at direction message-type header-details]
-  [:debug
-   (format-header at direction message-type header-details)])
-
-(defn ^:private verbose-trace [at direction message-type header-details body]
-  [:debug
-   (str (format-header at direction message-type header-details) "\n"
-        body "\n\n\n")])
-
 (defn ^:private latency [^java.time.Instant started ^java.time.Instant finished]
   (format "%sms" (- (.toEpochMilli finished) (.toEpochMilli started))))
 
@@ -47,21 +35,11 @@
     (latency started finished)
     (:message error) (:code error)))
 
-(defn ^:private format-unmatched-notif-header-details [notif]
-  (format "for unmatched request (%s):" (:id (:params notif))))
+(defn ^:private basic-trace [at direction message-type header-details]
+  (str (format-tag at) " " direction " " message-type " " header-details))
 
-(defn ^:private verbose-notification [direction notif at]
-  (verbose-trace at direction "notification" (format-notification-signature notif)
-                 (format-params notif)))
-
-(defn ^:private verbose-request [direction req at]
-  (verbose-trace at direction "request" (format-request-signature req)
-                 (format-params req)))
-
-(defn ^:private verbose-response [direction req resp started finished]
-  (verbose-trace finished direction "response"
-                 (format-response-header-details req resp started finished)
-                 (format-response-body resp)))
+(defn ^:private verbose-trace [header body]
+  (str header "\n" body "\n\n\n"))
 
 (defn ^:private basic-notification [direction notif at]
   (basic-trace at direction "notification" (format-notification-signature notif)))
@@ -71,6 +49,24 @@
 
 (defn ^:private basic-response [direction req resp started finished]
   (basic-trace finished direction "response" (format-response-header-details req resp started finished)))
+
+(defn ^:private basic-received-unmatched-response [at]
+  (basic-trace at "Received" "response" "for unmatched request"))
+
+(defn ^:private basic-received-unmatched-cancellation [at notif]
+  (basic-trace at "Received" "cancellation notification" (format "for unmatched request (%s):" (:id (:params notif)))))
+
+(defn ^:private verbose-notification [direction notif at]
+  (verbose-trace (basic-notification direction notif at)
+                 (format-params notif)))
+
+(defn ^:private verbose-request [direction req at]
+  (verbose-trace (basic-request direction req at)
+                 (format-params req)))
+
+(defn ^:private verbose-response [direction req resp started finished]
+  (verbose-trace (basic-response direction req resp started finished)
+                 (format-response-body resp)))
 
 (defprotocol ITracer
   (received-notification [this notif at])
@@ -91,11 +87,9 @@
   (received-response [_this req resp started finished]
     (verbose-response "Received" req resp started finished))
   (received-unmatched-response [_this resp at]
-    (verbose-trace at "Received" "response" "for unmatched request:"
-                   (format-body "Body" resp)))
+    (verbose-trace (basic-received-unmatched-response at) (format-body "Body" resp)))
   (received-unmatched-cancellation-notification [_this notif at]
-    (verbose-trace at "Received" "cancellation notification" (format-unmatched-notif-header-details notif)
-                   (format-params notif)))
+    (verbose-trace (basic-received-unmatched-cancellation at notif) (format-params notif)))
   (sending-notification [_this notif at]
     (verbose-notification "Sending" notif at))
   (sending-request [_this req at]
@@ -112,9 +106,9 @@
   (received-response [_this req resp started finished]
     (basic-response "Received" req resp started finished))
   (received-unmatched-response [_this _resp at]
-    (basic-trace at "Received" "response" "for unmatched request:"))
+    (basic-received-unmatched-response at))
   (received-unmatched-cancellation-notification [_this notif at]
-    (basic-trace at "Received" "cancellation notification" (format-unmatched-notif-header-details notif)))
+    (basic-received-unmatched-cancellation at notif))
   (sending-notification [_this notif at]
     (basic-notification "Sending" notif at))
   (sending-request [_this req at]

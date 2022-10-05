@@ -369,7 +369,7 @@
         trace-ch (:trace-ch server)]
     (server/start server nil)
     (async/put! input-ch (lsp.responses/response 100 {:processed true}))
-    (is (= (trace-log ["[Trace - 2022-03-05T13:35:23Z] Received response for unmatched request:"
+    (is (= (trace-log ["[Trace - 2022-03-05T13:35:23Z] Received response for unmatched request"
                        "Body: {"
                        "  \"jsonrpc\" : \"2.0\","
                        "  \"id\" : 100,"
