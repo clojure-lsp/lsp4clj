@@ -287,15 +287,18 @@
   [{:keys [output-ch input-ch log-ch trace? trace-level trace-ch clock on-close]
     :or {clock (java.time.Clock/systemDefaultZone)
          on-close (constantly nil)}}]
-  (let [trace-level (or trace-level
-                        (when (or trace? trace-ch) "verbose")
-                        "off")]
+  (let [;; before defaulting trace-ch, so that default is "off"
+        tracer (trace/tracer-for-level (or trace-level
+                                           (when (or trace? trace-ch) "verbose")
+                                           "off"))
+        log-ch (or log-ch (async/chan (async/sliding-buffer 20)))
+        trace-ch (or trace-ch (async/chan (async/sliding-buffer 20)))]
     (map->ChanServer
       {:output-ch output-ch
        :input-ch input-ch
-       :log-ch (or log-ch (async/chan (async/sliding-buffer 20)))
-       :trace-ch (or trace-ch (async/chan (async/sliding-buffer 20)))
-       :tracer* (atom (trace/tracer-for-level trace-level))
+       :log-ch log-ch
+       :trace-ch trace-ch
+       :tracer* (atom tracer)
        :clock clock
        :on-close on-close
        :request-id* (atom 0)
