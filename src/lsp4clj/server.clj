@@ -9,7 +9,8 @@
    [lsp4clj.protocols.endpoint :as protocols.endpoint]
    [lsp4clj.trace :as trace]
    [promesa.core :as p])
-  (:import (java.util.concurrent CancellationException)))
+  (:import
+   (java.util.concurrent CancellationException)))
 
 (set! *warn-on-reflection* true)
 
@@ -154,6 +155,10 @@
                                     message-details)]
     (lsp.responses/error resp error-body)))
 
+(defn trace [{:keys [tracer* trace-ch]} trace-f & params]
+  (when-let [trace-body (apply trace-f @tracer* params)]
+    (async/put! trace-ch [:debug trace-body])))
+
 ;; TODO: https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification/#initialize
 ;; * receive-request should return error until initialize request is received
 ;; * receive-notification should drop until initialize request is received, with the exception of exit
@@ -161,8 +166,9 @@
 ;; * send-notification should do nothing until initialize response is sent, with the exception of window/showMessage, window/logMessage, telemetry/event, and $/progress
 (defrecord ChanServer [input-ch
                        output-ch
-                       trace-ch
                        log-ch
+                       trace-ch
+                       tracer*
                        ^java.time.Clock clock
                        on-close
                        request-id*
@@ -207,32 +213,32 @@
           now (.instant clock)
           req (lsp.requests/request id method body)
           pending-request (pending-request id method now this)]
-      (some-> trace-ch (async/put! (trace/sending-request req now)))
+      (trace this trace/sending-request req now)
       ;; Important: record request before sending it, so it is sure to be
       ;; available during receive-response.
       (swap! pending-sent-requests* assoc id pending-request)
       ;; respect back pressure from clients that are slow to read; (go (>!)) will not suffice
       (async/>!! output-ch req)
       pending-request))
-  (send-notification [_this method body]
+  (send-notification [this method body]
     (let [now (.instant clock)
           notif (lsp.requests/notification method body)]
-      (some-> trace-ch (async/put! (trace/sending-notification notif now)))
+      (trace this trace/sending-notification notif now)
       ;; respect back pressure from clients that are slow to read; (go (>!)) will not suffice
       (async/>!! output-ch notif)))
-  (receive-response [_this {:keys [id error result] :as resp}]
+  (receive-response [this {:keys [id error result] :as resp}]
     (let [now (.instant clock)
           [pending-requests _] (swap-vals! pending-sent-requests* dissoc id)]
       (if-let [{:keys [p started] :as req} (get pending-requests id)]
         (do
-          (some-> trace-ch (async/put! (trace/received-response req resp started now)))
+          (trace this trace/received-response req resp started now)
           (deliver p (if error resp result)))
-        (some-> trace-ch (async/put! (trace/received-unmatched-response resp now))))))
+        (trace this trace/received-unmatched-response resp now))))
   (receive-request [this context {:keys [id method params] :as req}]
     (let [started (.instant clock)
           resp (lsp.responses/response id)]
       (try
-        (some-> trace-ch (async/put! (trace/received-request req started)))
+        (trace this trace/received-request req started)
         ;; coerce result/error to promise
         (let [result-promise (p/promise (receive-request method context params))]
           (swap! pending-received-requests* assoc id result-promise)
@@ -258,34 +264,44 @@
               (p/finally
                 (fn [resp _error]
                   (swap! pending-received-requests* dissoc id)
-                  (some-> trace-ch (async/put! (trace/sending-response req resp started (.instant clock))))
+                  (trace this trace/sending-response req resp started (.instant clock))
                   (async/>!! output-ch resp)))))
         (catch Throwable e ;; exceptions thrown by receive-request
           (log-error-receiving this e req)
           (async/>!! output-ch (internal-error-response resp req))))))
   (receive-notification [this context {:keys [method params] :as notif}]
     (let [now (.instant clock)]
-      (some-> trace-ch (async/put! (trace/received-notification notif now)))
+      (trace this trace/received-notification notif now)
       (if (= method "$/cancelRequest")
         (if-let [result-promise (get @pending-received-requests* (:id params))]
           (p/cancel! result-promise)
-          (some-> trace-ch (async/put! (trace/received-unmatched-cancellation-notification notif now))))
+          (trace this trace/received-unmatched-cancellation-notification notif now))
         (let [result (receive-notification method context params)]
           (when (identical? ::method-not-found result)
             (protocols.endpoint/log this :warn "received unexpected notification" method)))))))
 
+(defn set-trace-level [server trace-level]
+  (update server :tracer* reset! (trace/tracer-for-level trace-level)))
+
 (defn chan-server
-  [{:keys [output-ch input-ch log-ch trace? trace-ch clock on-close]
+  [{:keys [output-ch input-ch log-ch trace? trace-level trace-ch clock on-close]
     :or {clock (java.time.Clock/systemDefaultZone)
          on-close (constantly nil)}}]
-  (map->ChanServer
-    {:output-ch output-ch
-     :input-ch input-ch
-     :trace-ch (or trace-ch (and trace? (async/chan (async/sliding-buffer 20))))
-     :log-ch (or log-ch (async/chan (async/sliding-buffer 20)))
-     :clock clock
-     :on-close on-close
-     :request-id* (atom 0)
-     :pending-sent-requests* (atom {})
-     :pending-received-requests* (atom {})
-     :join (promise)}))
+  (let [;; before defaulting trace-ch, so that default is "off"
+        tracer (trace/tracer-for-level (or trace-level
+                                           (when (or trace? trace-ch) "verbose")
+                                           "off"))
+        log-ch (or log-ch (async/chan (async/sliding-buffer 20)))
+        trace-ch (or trace-ch (async/chan (async/sliding-buffer 20)))]
+    (map->ChanServer
+      {:output-ch output-ch
+       :input-ch input-ch
+       :log-ch log-ch
+       :trace-ch trace-ch
+       :tracer* (atom tracer)
+       :clock clock
+       :on-close on-close
+       :request-id* (atom 0)
+       :pending-sent-requests* (atom {})
+       :pending-received-requests* (atom {})
+       :join (promise)})))

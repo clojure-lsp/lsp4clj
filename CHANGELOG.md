@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+- Let language servers pick detail of traces, by setting `:trace-level`. #27
+- Let language servers set `:trace-level` on running lsp4clj server. #27
+
 ## v1.3.1
 
 ## v1.3.0
