@@ -265,12 +265,15 @@
 (defn trace-log [lines]
   [:debug (string/join "\n" (into lines ["" "" ""]))])
 
+(defn messages-trace-log [lines]
+  [:debug (string/join "\n" lines)])
+
 (deftest should-trace-received-notifications
   (let [input-ch (async/chan 3)
         output-ch (async/chan 3)
         server (server/chan-server {:output-ch output-ch
                                     :input-ch input-ch
-                                    :trace? true
+                                    :trace-level "verbose"
                                     :clock fixed-clock})
         trace-ch (:trace-ch server)]
     (server/start server nil)
@@ -287,7 +290,7 @@
         output-ch (async/chan 3)
         server (server/chan-server {:output-ch output-ch
                                     :input-ch input-ch
-                                    :trace? true
+                                    :trace-level "verbose"
                                     :clock fixed-clock})
         trace-ch (:trace-ch server)]
     (server/start server nil)
@@ -309,7 +312,7 @@
         output-ch (async/chan 3)
         server (server/chan-server {:output-ch output-ch
                                     :input-ch input-ch
-                                    :trace? true
+                                    :trace-level "verbose"
                                     :clock fixed-clock})
         trace-ch (:trace-ch server)
         _ (server/start server nil)
@@ -333,7 +336,7 @@
         output-ch (async/chan 3)
         server (server/chan-server {:output-ch output-ch
                                     :input-ch input-ch
-                                    :trace? true
+                                    :trace-level "verbose"
                                     :clock fixed-clock})
         trace-ch (:trace-ch server)
         _ (server/start server nil)
@@ -361,7 +364,7 @@
         output-ch (async/chan 3)
         server (server/chan-server {:output-ch output-ch
                                     :input-ch input-ch
-                                    :trace? true
+                                    :trace-level "verbose"
                                     :clock fixed-clock})
         trace-ch (:trace-ch server)]
     (server/start server nil)
@@ -382,7 +385,7 @@
         output-ch (async/chan 3)
         server (server/chan-server {:output-ch output-ch
                                     :input-ch input-ch
-                                    :trace? true
+                                    :trace-level "verbose"
                                     :clock fixed-clock})
         trace-ch (:trace-ch server)]
     (server/start server nil)
@@ -400,7 +403,7 @@
         output-ch (async/chan 3)
         server (server/chan-server {:output-ch output-ch
                                     :input-ch input-ch
-                                    :trace? true
+                                    :trace-level "verbose"
                                     :clock fixed-clock})
         trace-ch (:trace-ch server)]
     (server/start server nil)
@@ -540,4 +543,79 @@
            (h/assert-take merged-ch)))
     (is (= [:warn "received unexpected notification" "foo"]
            (h/assert-take merged-ch)))
+    (server/shutdown server)))
+
+(deftest should-trace-at-verbose-level-when-deprecated-flag-is-set
+  (let [input-ch (async/chan 3)
+        output-ch (async/chan 3)
+        server (server/chan-server {:output-ch output-ch
+                                    :input-ch input-ch
+                                    :trace? true ;; deprecated
+                                    :clock fixed-clock})
+        trace-ch (:trace-ch server)]
+    (server/start server nil)
+    (async/put! input-ch (lsp.requests/notification "foo" {:result "body"}))
+    (is (= (trace-log ["[Trace - 2022-03-05T13:35:23Z] Received notification 'foo'"
+                       "Params: {"
+                       "  \"result\" : \"body\""
+                       "}"])
+           (h/assert-take trace-ch)))
+    (server/shutdown server)))
+
+(deftest should-trace-at-messages-level
+  (let [input-ch (async/chan 3)
+        output-ch (async/chan 3)
+        server (server/chan-server {:output-ch output-ch
+                                    :input-ch input-ch
+                                    :trace-level "messages"
+                                    :clock fixed-clock})
+        trace-ch (:trace-ch server)]
+    (server/start server nil)
+    (async/put! input-ch (lsp.requests/notification "foo" {:result "body"}))
+    (is (= (messages-trace-log ["[Trace - 2022-03-05T13:35:23Z] Received notification 'foo'"])
+           (h/assert-take trace-ch)))
+    (server/shutdown server)))
+
+(deftest should-trace-at-off-level
+  (let [input-ch (async/chan 3)
+        output-ch (async/chan 3)
+        server (server/chan-server {:output-ch output-ch
+                                    :input-ch input-ch
+                                    :trace-level "off"
+                                    :clock fixed-clock})
+        trace-ch (:trace-ch server)]
+    (server/start server nil)
+    (async/put! input-ch (lsp.requests/notification "foo" {:result "body"}))
+    (h/assert-no-take trace-ch)
+    (server/shutdown server)))
+
+(deftest should-change-trace-level
+  (let [input-ch (async/chan 3)
+        output-ch (async/chan 3)
+        server (server/chan-server {:output-ch output-ch
+                                    :input-ch input-ch
+                                    :trace-level "verbose"
+                                    :clock fixed-clock})
+        trace-ch (:trace-ch server)]
+    (server/start server nil)
+    (async/put! input-ch (lsp.requests/notification "foo" {:result "body"}))
+    (is (= (trace-log ["[Trace - 2022-03-05T13:35:23Z] Received notification 'foo'"
+                       "Params: {"
+                       "  \"result\" : \"body\""
+                       "}"])
+           (h/assert-take trace-ch)))
+    (server/set-trace-level server "messages")
+    (async/put! input-ch (lsp.requests/notification "foo" {:result "body"}))
+    (is (= (messages-trace-log ["[Trace - 2022-03-05T13:35:23Z] Received notification 'foo'"])
+           (h/assert-take trace-ch)))
+    (server/set-trace-level server "off")
+    (async/put! input-ch (lsp.requests/notification "foo" {:result "body"}))
+    (h/assert-no-take trace-ch)
+    (server/set-trace-level server "verbose")
+    (async/put! input-ch (lsp.requests/notification "foo" {:result "body"}))
+    (is (= (trace-log ["[Trace - 2022-03-05T13:35:23Z] Received notification 'foo'"
+                       "Params: {"
+                       "  \"result\" : \"body\""
+                       "}"])
+           (h/assert-take trace-ch)))
     (server/shutdown server)))

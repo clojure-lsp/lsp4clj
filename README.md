@@ -111,16 +111,20 @@ This will start listening on the provided port, blocking until a client makes a 
 
 ### Tracing
 
-As you are implementing, you may want to trace incoming and outgoing messages. Initialize the server with `:trace? true` and then read traces (two element vectors, beginning with the log level `:debug` and ending with a string, the trace itself) off its `:trace-ch`.
+As you are implementing, you may want to trace incoming and outgoing messages. Initialize the server with `:trace-level "verbose"` and then read traces (two element vectors, beginning with the log level `:debug` and ending with a string, the trace itself) off its `:trace-ch`.
 
 ```clojure
-(let [server (lsp4clj.io-server/stdio-server {:trace? true})]
+(let [server (lsp4clj.io-server/stdio-server {:trace-level "verbose"})]
   (async/go-loop []
     (when-let [[level trace] (async/<! (:trace-ch server))]
       (logger/log level trace)
       (recur)))
   (lsp4clj.server/start server context))
 ```
+
+`:trace-level` can be set to `"off"` (no tracing), `"messages"` (to show just the message time, method, id and direction), or `"verbose"` (to also show details of the message body).
+
+The trace level can be changed during the life of a server by calling, for example, `(ls4clj.server/set-trace-level server "messages")`. This can be used to respect a trace level received at runtime, either in an [initialize](https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification/#initializeParams) request or a [$/setTrace](https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification/#setTrace) notification.
 
 ### Testing
 
