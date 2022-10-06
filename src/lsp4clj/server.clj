@@ -225,7 +225,8 @@
           notif (lsp.requests/notification method body)]
       (trace this trace/sending-notification notif now)
       ;; respect back pressure from clients that are slow to read; (go (>!)) will not suffice
-      (async/>!! output-ch notif)))
+      (async/>!! output-ch notif)
+      nil))
   (receive-response [this {:keys [id error result] :as resp}]
     (let [now (.instant clock)
           [pending-requests _] (swap-vals! pending-sent-requests* dissoc id)]

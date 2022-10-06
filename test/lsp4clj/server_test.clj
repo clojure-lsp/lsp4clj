@@ -124,6 +124,15 @@
            (h/assert-take output-ch)))
     (server/shutdown server)))
 
+(deftest should-return-nil-after-sending-notifications
+  (let [input-ch (async/chan 3)
+        output-ch (async/chan 3)
+        server (server/chan-server {:output-ch output-ch
+                                    :input-ch input-ch})]
+    (server/start server nil)
+    (is (nil? (server/send-notification server "req" {:body "foo"})))
+    (server/shutdown server)))
+
 (deftest should-cancel-request-when-cancellation-notification-receieved
   (let [input-ch (async/chan 3)
         output-ch (async/chan 3)
