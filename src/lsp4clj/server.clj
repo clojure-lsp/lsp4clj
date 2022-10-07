@@ -8,7 +8,8 @@
    [lsp4clj.lsp.responses :as lsp.responses]
    [lsp4clj.protocols.endpoint :as protocols.endpoint]
    [lsp4clj.trace :as trace]
-   [promesa.core :as p])
+   [promesa.core :as p]
+   [promesa.protocols])
   (:import
    (java.util.concurrent CancellationException)))
 
@@ -159,6 +160,25 @@
   (when-let [trace-body (apply trace-f @tracer* params)]
     (async/put! trace-ch [:debug trace-body])))
 
+(defrecord PendingReceivedRequest [result-promise cancelled?]
+  promesa.protocols/ICancellable
+  (-cancel! [_]
+    (p/cancel! result-promise)
+    (reset! cancelled? true))
+  (-cancelled? [_]
+    @cancelled?))
+
+(defn pending-received-request [method context params]
+  (let [cancelled? (atom false)
+        ;; coerce result/error to promise
+        result-promise (p/promise
+                         (receive-request method
+                                          (assoc context ::req-cancelled? cancelled?)
+                                          params))]
+    (map->PendingReceivedRequest
+      {:result-promise result-promise
+       :cancelled? cancelled?})))
+
 ;; TODO: https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification/#initialize
 ;; * receive-request should return error until initialize request is received
 ;; * receive-notification should drop until initialize request is received, with the exception of exit
@@ -239,10 +259,10 @@
           resp (lsp.responses/response id)]
       (try
         (trace this trace/received-request req started)
-        ;; coerce result/error to promise
-        (let [result-promise (p/promise (receive-request method context params))]
-          (swap! pending-received-requests* assoc id result-promise)
-          (-> result-promise
+        (let [pending-req (pending-received-request method context params)]
+          (swap! pending-received-requests* assoc id pending-req)
+          (-> pending-req
+              :result-promise
               ;; convert result/error to response
               (p/then
                 (fn [result]
@@ -273,8 +293,8 @@
     (let [now (.instant clock)]
       (trace this trace/received-notification notif now)
       (if (= method "$/cancelRequest")
-        (if-let [result-promise (get @pending-received-requests* (:id params))]
-          (p/cancel! result-promise)
+        (if-let [pending-req (get @pending-received-requests* (:id params))]
+          (p/cancel! pending-req)
           (trace this trace/received-unmatched-cancellation-notification notif now))
         (let [result (receive-notification method context params)]
           (when (identical? ::method-not-found result)

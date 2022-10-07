@@ -142,6 +142,25 @@
              (h/assert-take output-ch))))
     (server/shutdown server)))
 
+(deftest should-inform-handler-when-request-is-cancelled
+  (let [input-ch (async/chan 3)
+        output-ch (async/chan 3)
+        server (server/chan-server {:output-ch output-ch
+                                    :input-ch input-ch})
+        task-completed (promise)]
+    (server/start server nil)
+    (with-redefs [server/receive-request (fn [_method context _params]
+                                           (p/future
+                                             (Thread/sleep 300)
+                                             (deliver task-completed
+                                                      (if @(:lsp4clj.server/req-cancelled? context)
+                                                        :cancelled
+                                                        :ran-anyway))))]
+      (async/put! input-ch (lsp.requests/request 1 "initialize" {}))
+      (async/put! input-ch (lsp.requests/notification "$/cancelRequest" {:id 1}))
+      (is (= :cancelled (deref task-completed 1000 :timed-out))))
+    (server/shutdown server)))
+
 (deftest should-cancel-if-no-response-received
   (let [input-ch (async/chan 3)
         output-ch (async/chan 3)

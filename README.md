@@ -47,13 +47,35 @@ These `defmethod`s receive 3 arguments, the method name, a "context", and the `p
        (conform-or-log ::coercer/location)))
 ```
 
-Notifications will block other requests and notifications. That is, lsp4clj won't read the next request or notification sent by a client until the language server returns from `lsp4clj.server/receive-notification`. By default, requests will block other messages too. That is, if a language server wants a request to block others, it should calculate and return the response in `lsp4clj.server/receive-request`. Otherwise, to allow the response to be calculated in parallel with others, it should return a `java.util.concurrent.CompletableFuture`, possibly created with `promesa.core/future`.
-
 The return value of requests will be converted to camelCase json and returned to the client. If the return value looks like `{:error ...}`, it is assumed to indicate an error response, and the `...` part will be set as the `error` of a [JSON-RPC error object](https://www.jsonrpc.org/specification#error_object). It is up to you to conform the `...` object (by giving it a `code`, `message`, and `data`.) Otherwise, the entire return value will be set as the `result` of a [JSON-RPC response object](https://www.jsonrpc.org/specification#response_object). (Message ids are handled internally by lsp4clj.)
+
+### Async requests
+
+lsp4clj passes the language server the client's messages one at a time. It won't provide another message until it receives a result from the multimethods. Therefore, by default, requests and notifications are processed in series.
+
+However, it's possible to calculate requests in parallel (though not notifications). If the language server wants a request to be calculated in parallel with others, it should return a `java.util.concurrent.CompletableFuture`, possibly created with `promesa.core/future`, from `lsp4clj.server/receive-request`. lsp4clj will arrange for the result of this future to be returned to the client when it resolves. In the meantime, lsp4clj will continue passing the client's messages to the language server. The language server can control the number of simultaneous messages by setting the parallelism of the CompletableFutures' executor.
+
+### Cancelled inbound requests
+
+Clients sometimes send `$/cancelRequest` notifications to indicate they're no longer interested in a request. If the request is being calculated in series, lsp4clj won't see the cancellation notification until after the response is already generated, so it's not possible to cancel requests that are processed in series.
+
+But clients can cancel requests that are processed in parallel. In these cases lsp4clj will cancel the future and return a message to the client acknowledging the cancellation. Because of the design of CompletableFuture, cancellation can mean one of two things. If the executor hasn't started the thread that is calculating the value of the future (perhaps because the executor's thread pool is full), it won't be started. But if there is already a thread calculating the value, the thread won't be interupted. See the documentation for CompletableFuture for an explanation of why this is so.
+
+Nevertheless, lsp4clj gives language servers a tool to abort cancelled requests. In the request's `context`, there will be a key `:lsp4clj.server/req-cancelled?` that can be dereffed to check if the request has been cancelled. If it has, then the language server can abort whatever it is doing. If it fails to abort, there are no consequences except that it will do more work than necessary.
+
+```clojure
+(defmethod lsp4clj.server/receive-request "textDocument/semanticTokens/full"
+  [_ {:keys [:lsp4clj.server/req-cancelled?] :as context} params]
+  (promesa.core/future
+    ;; client may cancel request while we are waiting for analysis
+    (wait-for-analysis context)
+    (when-not @req-cancelled?
+      (handler/semantic-tokens-full context params))))
+```
 
 ### Send messages
 
-Servers also initiate their own requests and notifications to a client. To send a notification, call `lsp4clj.server/send-notification`.
+Servers also send their own requests and notifications to a client. To send a notification, call `lsp4clj.server/send-notification`.
 
 ```clojure
 (->> {:message message

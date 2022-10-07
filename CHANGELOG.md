@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Let language servers abort running requests that a client has cancelled.
+
 ## v1.4.0
 
 - Let language servers pick detail of traces, by setting `:trace-level`. #27
