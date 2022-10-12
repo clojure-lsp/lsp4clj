@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+## v1.5.0
+
 - Let language servers abort running requests that a client has cancelled.
 
 ## v1.4.0
