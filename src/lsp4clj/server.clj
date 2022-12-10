@@ -72,7 +72,9 @@
 
 ;; Avoid error: java.lang.IllegalArgumentException: Multiple methods in multimethod 'simple-dispatch' match dispatch value: class lsp4clj.server.PendingRequest -> interface clojure.lang.IPersistentMap and interface clojure.lang.IDeref, and neither is preferred
 ;; Only when CIDER is running? See https://github.com/thi-ng/color/issues/10
-(prefer-method pprint/simple-dispatch clojure.lang.IDeref clojure.lang.IPersistentMap)
+;; Also see https://github.com/babashka/process/commit/e46a5f3e42321b3ecfda960b7b248a888b44aa3b
+(defmethod pprint/simple-dispatch PendingRequest [req]
+  (pprint/pprint (select-keys req [:id :method :started])))
 
 (defn pending-request
   "Returns an object representing a pending JSON-RPC request to a remote
