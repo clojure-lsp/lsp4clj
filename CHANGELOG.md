@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+## v1.6.0
+
 - Buffer I/O, slightly reducing latency.
 
 ## v1.5.0
