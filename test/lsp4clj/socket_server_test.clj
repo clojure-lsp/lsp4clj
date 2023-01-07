@@ -29,8 +29,8 @@
         server* (future (socket-server/server {} socket-data))]
     (try
       (with-open [client (Socket. (.getInetAddress socket) (.getLocalPort socket))]
-        (let [client-input-ch (io-chan/input-stream->input-chan (.getInputStream client))
-              client-output-ch (io-chan/output-stream->output-chan (.getOutputStream client))
+        (let [client-input-ch (io-chan/input-stream->input-chan client)
+              client-output-ch (io-chan/output-stream->output-chan client)
               server @server*
               join (server/start server nil)]
           (try

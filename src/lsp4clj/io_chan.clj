@@ -4,6 +4,7 @@
    [camel-snake-kebab.extras :as cske]
    [cheshire.core :as json]
    [clojure.core.async :as async]
+   [clojure.java.io :as io]
    [clojure.string :as string])
   (:import
    (java.io EOFException InputStream OutputStream)))
@@ -88,9 +89,10 @@
 
   Reads in a thread to avoid blocking a go block thread."
   ([input] (input-stream->input-chan input {}))
-  ([^InputStream input {:keys [close? keyword-function]
-                        :or {close? true, keyword-function csk/->kebab-case-keyword}}]
-   (let [messages (async/chan 1)]
+  ([input {:keys [close? keyword-function]
+           :or {close? true, keyword-function csk/->kebab-case-keyword}}]
+   (let [input (io/input-stream input)
+         messages (async/chan 1)]
      (async/thread
        (loop [headers {}]
          (let [line (read-header-line input)]
@@ -112,8 +114,9 @@
   channel is closed, closes the output.
 
   Writes in a thread to avoid blocking a go block thread."
-  [^OutputStream output]
-  (let [messages (async/chan 1)]
+  [output]
+  (let [output (io/output-stream output)
+        messages (async/chan 1)]
     (async/thread
       (with-open [writer output] ;; close output when channel closes
         (loop []

@@ -42,6 +42,6 @@
                      (.close conn)
                      (.close socket))]
      (io-server/server (assoc opts
-                              :in (.getInputStream conn)
-                              :out (.getOutputStream conn)
+                              :in conn
+                              :out conn
                               :on-close on-close)))))

@@ -12,7 +12,7 @@
   (string/join "\r\n" arr))
 
 (defn mock-input-stream [^String input]
-  (java.io.ByteArrayInputStream. (.getBytes input "utf-8")))
+  (.getBytes input "utf-8"))
 
 (deftest output-stream-should-camel-case-output
   (let [output-stream (java.io.ByteArrayOutputStream.)
