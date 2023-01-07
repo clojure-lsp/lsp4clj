@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Buffer I/O, slightly reducing latency.
+
 ## v1.5.0
 
 - Let language servers abort running requests that a client has cancelled.
@@ -66,7 +68,7 @@ see https://github.com/clojure-lsp/clojure-lsp/pull/1117
 
 ## v0.2.0
 
-- Support LSP 3.16 file operations: `workspace/willRenameFiles`, `workspace/didRenameFiles`, 
+- Support LSP 3.16 file operations: `workspace/willRenameFiles`, `workspace/didRenameFiles`,
 `workspace/willCreateFiles`, `workspace/didCreateFiles`, `workspace/willDeleteFiles`, `workspace/didDeleteFiles`.
 
 ## v0.0.1
