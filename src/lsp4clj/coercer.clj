@@ -222,6 +222,11 @@
 (s/def ::command (s/keys :req-un [:command/title :command/command]
                          :opt-un [:command/arguments]))
 
+(s/def ::any-or-error
+  (s/and (s/or :error ::response-error
+               :any identity)
+         (s/conformer second)))
+
 (def show-message-type-enum
   {:error 1
    :warning 2
