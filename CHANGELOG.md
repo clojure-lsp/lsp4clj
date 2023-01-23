@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Add :coercer/any-or-error for execute-command response
+
 ## v1.6.0
 
 - Buffer I/O, slightly reducing latency.
