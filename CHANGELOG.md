@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+## v1.7.1
+
 - Fix $/progress notifications when kind is report to pass message instead of title.
 
 ## v1.7.0
