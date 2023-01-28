@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Fix $/progress notifications when kind is report to pass message instead of title.
+
 ## v1.7.0
 
 - Add :coercer/any-or-error for execute-command response
