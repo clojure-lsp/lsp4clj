@@ -80,8 +80,16 @@
                                  :opt-un [::additional-text-edits ::filter-text ::detail ::text-edit
                                           :completion-item/kind ::documentation ::data
                                           ::insert-text :completion-item/insert-text-format]))
+(s/def ::completion-item-or-error
+  (s/and (s/or :error ::response-error
+               :completion-item ::completion-item)
+         (s/conformer second)))
 
 (s/def ::completion-items (s/coll-of ::completion-item))
+(s/def ::completion-items-or-error
+  (s/and (s/or :error ::response-error
+               :completion-items ::completion-items)
+         (s/conformer second)))
 
 (s/def :input.completion-item/kind
   (s/and integer?
@@ -101,6 +109,11 @@
 (s/def ::uri string?)
 
 (s/def ::edits (s/coll-of ::text-edit))
+(s/def ::edits-or-error
+  (s/and (s/or :error ::response-error
+               :edits ::edits)
+         (s/conformer second)))
+
 (s/def ::text-document (s/keys :req-un [::version ::uri]))
 (s/def ::text-document-edit (s/keys :req-un [::text-document ::edits]))
 (s/def ::changes (s/coll-of (s/tuple string? ::edits) :kind map?))
@@ -129,6 +142,9 @@
 
 (s/def ::workspace-edit-or-error
   (s/and (s/or :error ::response-error
+               ;; Why do we have two names for the same right-hand side?
+               ;; Wouldn't `:changes` always match first, meaning we'd never see `:document-changes`?
+               ;; And isn't the left-hand side essentially unused?
                :changes ::workspace-edit
                :document-changes ::workspace-edit)
          (s/conformer second)))
@@ -139,7 +155,15 @@
   (s/keys :req-un [:workspace-edit-params/edit]))
 
 (s/def ::location (s/keys :req-un [::uri ::range]))
+(s/def ::location-or-error
+  (s/and (s/or :error ::response-error
+               :location ::location)
+         (s/conformer second)))
 (s/def ::locations (s/coll-of ::location))
+(s/def ::locations-or-error
+  (s/and (s/or :error ::response-error
+               :locations ::locations)
+         (s/conformer second)))
 
 (s/def :signature-help/documentation ::documentation)
 
@@ -158,6 +182,10 @@
 (s/def ::signature-help (s/keys :req-un [:signature-help/signatures]
                                 :opt-un [:signature-help/active-signature
                                          :signature-help/active-parameter]))
+(s/def ::signature-help-or-error
+  (s/and (s/or :error ::response-error
+               :signature-help ::signature-help)
+         (s/conformer second)))
 
 (def symbol-kind-enum
   {:file 1 :module 2 :namespace 3 :package 4 :class 5 :method 6 :property 7 :field 8 :constructor 9
@@ -182,14 +210,30 @@
 (s/def :document-symbol/children (s/coll-of ::document-symbol))
 
 (s/def ::document-symbols (s/coll-of ::document-symbol))
+(s/def ::document-symbols-or-error
+  (s/and (s/or :error ::response-error
+               :document-symbols ::document-symbols)
+         (s/conformer second)))
 
 (s/def ::document-highlight (s/keys :req-un [::range]))
 
 (s/def ::document-highlights (s/coll-of ::document-highlight))
+(s/def ::document-highlights-or-error
+  (s/and (s/or :error ::response-error
+               :document-highlights ::document-highlights)
+         (s/conformer second)))
 
-(s/def ::symbol-information (s/keys :req-un [::name :symbol/kind ::location]))
+(s/def ::workspace-symbol (s/keys :req-un [::name :symbol/kind ::location]))
+(s/def ::workspace-symbol-or-error
+  (s/and (s/or :error ::response-error
+               :workspace-symbol ::workspace-symbol)
+         (s/conformer second)))
 
-(s/def ::workspace-symbols (s/coll-of ::symbol-information))
+(s/def ::workspace-symbols (s/coll-of ::workspace-symbol))
+(s/def ::workspace-symbols-or-error
+  (s/and (s/or :error ::response-error
+               :workspace-symbols ::workspace-symbols)
+         (s/conformer second)))
 
 (s/def ::severity integer?)
 
@@ -214,6 +258,10 @@
 
 (s/def ::hover (s/keys :req-un [::contents]
                        :opt-un [::range]))
+(s/def ::hover-or-error
+  (s/and (s/or :error ::response-error
+               :hover ::hover)
+         (s/conformer second)))
 
 (s/def :command/title string?)
 (s/def :command/command string?)
@@ -286,16 +334,36 @@
                                       ::command
                                       :code-action/preferred
                                       ::data]))
+(s/def ::code-action-or-error
+  (s/and (s/or :error ::response-error
+               :code-action ::code-action)
+         (s/conformer second)))
 
 (s/def ::code-actions (s/coll-of ::code-action))
+(s/def ::code-actions-or-error
+  (s/and (s/or :error ::response-error
+               :code-actions ::code-actions)
+         (s/conformer second)))
 
 (s/def ::code-lens (s/keys :req-un [::range]
                            :opt-un [::command ::data]))
+(s/def ::code-lens-or-error
+  (s/and (s/or :error ::response-error
+               :code-lens ::code-lens)
+         (s/conformer second)))
 
 (s/def ::code-lenses (s/coll-of ::code-lens))
+(s/def ::code-lenses-or-error
+  (s/and (s/or :error ::response-error
+               :code-lenses ::code-lenses)
+         (s/conformer second)))
 
 (s/def ::semantic-tokens (s/keys :req-un [::data]
                                  :opt-un [::result-id]))
+(s/def ::semantic-tokens-or-error
+  (s/and (s/or :error ::response-error
+               :semantic-tokens ::semantic-tokens)
+         (s/conformer second)))
 
 (s/def ::call-hierarchy-item (s/keys :req-un [::name
                                               :symbol/kind
@@ -305,6 +373,10 @@
                                      :opt-un [::tags ::detail ::data]))
 
 (s/def ::call-hierarchy-items (s/coll-of ::call-hierarchy-item))
+(s/def ::call-hierarchy-items-or-error
+  (s/and (s/or :error ::response-error
+               :call-hierarchy-items ::call-hierarchy-items)
+         (s/conformer second)))
 
 (s/def :call-hierarchy/from-ranges (s/coll-of ::range))
 (s/def :call-hierarchy/from ::call-hierarchy-item)
@@ -315,7 +387,15 @@
 (s/def ::call-hierarchy-outgoing-call (s/keys :req-un [:call-hierarchy/to :call-hierarchy/from-ranges]))
 
 (s/def ::call-hierarchy-incoming-calls (s/coll-of ::call-hierarchy-incoming-call))
+(s/def ::call-hierarchy-incoming-calls-or-error
+  (s/and (s/or :error ::response-error
+               :call-hierarchy-incoming-calls ::call-hierarchy-incoming-calls)
+         (s/conformer second)))
 (s/def ::call-hierarchy-outgoing-calls (s/coll-of ::call-hierarchy-outgoing-call))
+(s/def ::call-hierarchy-outgoing-calls-or-error
+  (s/and (s/or :error ::response-error
+               :call-hierarchy-outgoing-calls ::call-hierarchy-outgoing-calls)
+         (s/conformer second)))
 
 (s/def :linked-editing-range/ranges (s/coll-of ::range))
 
