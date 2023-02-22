@@ -112,22 +112,79 @@
         log-title (format-error-code "Error receiving message" :internal-error)]
     (protocols.endpoint/log server :error e (str log-title "\n" message-details))))
 
-(defn ^:private receive-message
-  [server context message]
-  (let [message-type (coercer/input-message-type message)]
-    (try
+(defn ^:private spawn-receipt-thread [buf-or-n f]
+  (let [receipt-ch (async/chan buf-or-n)]
+    (async/thread
       (discarding-stdout
-        (case message-type
-          (:parse-error :invalid-request)
-          (protocols.endpoint/log server :error (format-error-code "Error reading message" message-type))
-          :request
-          (protocols.endpoint/receive-request server context message)
-          (:response.result :response.error)
-          (protocols.endpoint/receive-response server message)
-          :notification
-          (protocols.endpoint/receive-notification server context message)))
-      (catch Throwable e ;; exceptions thrown by receive-response or receive-notification (receive-request catches its own exceptions)
-        (log-error-receiving server e message)))))
+        (loop []
+          (when-let [[message-type message] (async/<!! receipt-ch)]
+            (f message-type message)
+            (recur)))))
+    receipt-ch))
+
+(defn ^:private run-pipeline
+  "Forwards messages received on the input-ch to the language server, for
+  further processing."
+  [server context input-ch]
+  (let [;; In order to process some requests and (all) notifications in series,
+        ;; the language server sometimes needs to block client-initiated input.
+        ;; If the language server sends requests during that time, it needs to
+        ;; receive responses, even though it's blocking other input. Otherwise,
+        ;; it will end up in a deadlock, where it's waiting to receive a
+        ;; response off the input-ch and the input-ch isn't being read from
+        ;; because the server is blocking input. See
+        ;; https://github.com/clojure-lsp/clojure-lsp/issues/1500.
+
+        ;; The messages all arrive in order on the input-ch so to get to the
+        ;; client's response, we have to queue whatever other messages it's
+        ;; sent. We do that by storing them in a sliding buffer. Because of the
+        ;; sliding buffer:
+        ;; * if the client sends a message which causes the language server to
+        ;;   block, and
+        ;; * if the language server sends a request during that time, and
+        ;; * if the client sends more than 100 other messages between when the
+        ;;   language server started blocking and when the client responds to
+        ;;   the language server's request,
+        ;; * then the client's earliest messages will be dropped.
+        ;; The same is true in reverse.
+
+        ;; We process the client- and language-server-initiated messages in
+        ;; separate threads.
+        ;; * Threads, so the language server can use >!! and so that we can use
+        ;;   (>!! output-ch) to respect back pressure from clients that are slow
+        ;;   to read.
+        ;; * Separate, so one can continue while the other is blocked.
+        server-initiated-in-ch (spawn-receipt-thread
+                                 (async/sliding-buffer 100)
+                                 (fn [_ message]
+                                   (try
+                                     (protocols.endpoint/receive-response server message)
+                                     (catch Throwable e
+                                       (log-error-receiving server e message)))))
+        client-initiated-in-ch (spawn-receipt-thread
+                                 (async/sliding-buffer 100)
+                                 (fn [message-type message]
+                                   (if (identical? :request message-type)
+                                       ;; receive-request catches its own exceptions
+                                     (protocols.endpoint/receive-request server context message)
+                                     (try
+                                       (protocols.endpoint/receive-notification server context message)
+                                       (catch Throwable e
+                                         (log-error-receiving server e message))))))]
+    (async/go-loop []
+      (if-let [message (async/<! input-ch)]
+        (let [message-type (coercer/input-message-type message)]
+          (case message-type
+            (:parse-error :invalid-request)
+            (protocols.endpoint/log server :error (format-error-code "Error reading message" message-type))
+            (:response.result :response.error)
+            (async/>! server-initiated-in-ch [:response message])
+            (:request :notification)
+            (async/>! client-initiated-in-ch [message-type message]))
+          (recur))
+        (do
+          (async/close! server-initiated-in-ch)
+          (async/close! client-initiated-in-ch))))))
 
 ;; Expose endpoint methods to language servers
 
@@ -199,21 +256,16 @@
                        join]
   protocols.endpoint/IEndpoint
   (start [this context]
-    (let [;; a thread so language server can use >!! and so that receive-message
-          ;; can use (>!! output-ch) to respect back pressure from clients that
-          ;; are slow to read.
-          pipeline (async/thread
-                     (loop []
-                       (if-let [message (async/<!! input-ch)]
-                         (do
-                           (receive-message this context message)
-                           (recur))
-                         (async/close! output-ch))))]
+    ;; Start receiving messages.
+    (let [pipeline (run-pipeline this context input-ch)]
+      ;; Wait to stop receiving messages.
       (async/go
-        ;; Wait for pipeline to close. This indicates input-ch was closed and
-        ;; that now output-ch is closed.
+        ;; When pipeline closes, it indicates input-ch has closed. We're done
+        ;; receiving.
         (async/<! pipeline)
-        ;; Do additional cleanup.
+        ;; Do cleanup.
+        ;; TODO: do we really know that we've finished putting to output-ch?
+        (async/close! output-ch)
         (async/close! log-ch)
         (some-> trace-ch async/close!)
         (on-close)
