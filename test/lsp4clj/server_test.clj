@@ -146,6 +146,15 @@
                                                       _ (Thread/sleep 100)
                                                       resp (server/deref-or-cancel req 1000 :broke-deadlock)]
                                                   (deliver client-resp resp)))]
+      ;; The first pass of this fix used a `(chan 1)` instead of
+      ;; `(sliding-buffer 100)`. It worked when the client sent only two
+      ;; messages before the server could finish the first, but not when it sent
+      ;; 3 or more. The first notif made the server start sleeping, the second
+      ;; filled up the channel's buffer, and the third blocked on putting onto
+      ;; the channel, meaning the client response on the next few lines never
+      ;; got through. So these lines check that "several" client messages can be
+      ;; queued. See notes in lsp4clj.server for caveats about what "several"
+      ;; means.
       (async/put! input-ch (lsp.requests/notification "client-sent-notif" {:input 1}))
       (async/put! input-ch (lsp.requests/notification "client-sent-notif" {:input 2}))
       (async/put! input-ch (lsp.requests/notification "client-sent-notif" {:input 3}))

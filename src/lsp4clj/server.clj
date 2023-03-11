@@ -112,19 +112,19 @@
         log-title (format-error-code "Error receiving message" :internal-error)]
     (protocols.endpoint/log server :error e (str log-title "\n" message-details))))
 
-(defn ^:private spawn-receipt-thread [buf-or-n f]
-  (let [receipt-ch (async/chan buf-or-n)]
+(defn thread-loop [buf-or-n f]
+  (let [ch (async/chan buf-or-n)]
     (async/thread
       (discarding-stdout
         (loop []
-          (when-let [[message-type message] (async/<!! receipt-ch)]
-            (f message-type message)
+          (when-let [arg (async/<!! ch)]
+            (f arg)
             (recur)))))
-    receipt-ch))
+    ch))
 
-(defn ^:private run-pipeline
-  "Forwards messages received on the input-ch to the language server, for
-  further processing."
+(defn ^:private dispatch-input
+  "Dispatches messages received on the input-ch based on message type. Returns a
+  channel which will close after the input-ch is closed."
   [server context input-ch]
   (let [;; In order to process some requests and (all) notifications in series,
         ;; the language server sometimes needs to block client-initiated input.
@@ -154,23 +154,25 @@
         ;;   (>!! output-ch) to respect back pressure from clients that are slow
         ;;   to read.
         ;; * Separate, so one can continue while the other is blocked.
-        server-initiated-in-ch (spawn-receipt-thread
+
+        ;; (Jacob Maine): 100 is picked out of thin air. I have no idea how to
+        ;; estimate how big the buffer should be to avoid dropping messages. LSP
+        ;; communication tends to be very quiet, then very chatty, so it depends
+        ;; a lot on what the client and server are doing. I also don't know how
+        ;; many messages we could store without running into memory problems,
+        ;; since this is dependent on so many variables, not just the size of
+        ;; the JVM's memory, but also the size of the messages, which can be
+        ;; anywhere from a few bytes to megabytes.
+        server-initiated-in-ch (thread-loop
                                  (async/sliding-buffer 100)
-                                 (fn [_ message]
-                                   (try
-                                     (protocols.endpoint/receive-response server message)
-                                     (catch Throwable e
-                                       (log-error-receiving server e message)))))
-        client-initiated-in-ch (spawn-receipt-thread
+                                 (fn [response]
+                                   (protocols.endpoint/receive-response server response)))
+        client-initiated-in-ch (thread-loop
                                  (async/sliding-buffer 100)
-                                 (fn [message-type message]
+                                 (fn [[message-type message]]
                                    (if (identical? :request message-type)
-                                       ;; receive-request catches its own exceptions
                                      (protocols.endpoint/receive-request server context message)
-                                     (try
-                                       (protocols.endpoint/receive-notification server context message)
-                                       (catch Throwable e
-                                         (log-error-receiving server e message))))))]
+                                     (protocols.endpoint/receive-notification server context message))))]
     (async/go-loop []
       (if-let [message (async/<! input-ch)]
         (let [message-type (coercer/input-message-type message)]
@@ -178,7 +180,7 @@
             (:parse-error :invalid-request)
             (protocols.endpoint/log server :error (format-error-code "Error reading message" message-type))
             (:response.result :response.error)
-            (async/>! server-initiated-in-ch [:response message])
+            (async/>! server-initiated-in-ch message)
             (:request :notification)
             (async/>! client-initiated-in-ch [message-type message]))
           (recur))
@@ -257,14 +259,34 @@
   protocols.endpoint/IEndpoint
   (start [this context]
     ;; Start receiving messages.
-    (let [pipeline (run-pipeline this context input-ch)]
+    (let [pipeline (dispatch-input this context input-ch)]
       ;; Wait to stop receiving messages.
       (async/go
         ;; When pipeline closes, it indicates input-ch has closed. We're done
         ;; receiving.
         (async/<! pipeline)
         ;; Do cleanup.
-        ;; TODO: do we really know that we've finished putting to output-ch?
+
+        ;; The [docs](https://clojuredocs.org/clojure.core.async/close!) for
+        ;; `close!` say A) "The channel will no longer accept any puts", B)
+        ;; "Data in the channel remains available for taking", and C) "Logically
+        ;; closing happens after all puts have been delivered."
+
+        ;; At this point the input-ch has been closed, which means any messages
+        ;; that were read before the channel was closed have been put on the
+        ;; channel (C). However, the takes off of it, the takes which then
+        ;; forward the messages to the language server, may or may not have
+        ;; happened (B). And even if the language server has received some
+        ;; messages, if it responds after this line closes the output-ch, the
+        ;; responses will be dropped (A).
+
+        ;; All that to say, it's possible for the lsp4clj server to drop the
+        ;; language server's final few responses.
+
+        ;; It doesn't really matter though, because the users of lsp4clj
+        ;; typically don't call `shutdown` on the lsp4clj server until they've
+        ;; received the `exit` notification, which is the client indicating it
+        ;; no longer expects any responses anyway.
         (async/close! output-ch)
         (async/close! log-ch)
         (some-> trace-ch async/close!)
@@ -302,13 +324,16 @@
       (async/>!! output-ch notif)
       nil))
   (receive-response [this {:keys [id error result] :as resp}]
-    (let [now (.instant clock)
-          [pending-requests _] (swap-vals! pending-sent-requests* dissoc id)]
-      (if-let [{:keys [p started] :as req} (get pending-requests id)]
-        (do
-          (trace this trace/received-response req resp started now)
-          (deliver p (if error resp result)))
-        (trace this trace/received-unmatched-response resp now))))
+    (try
+      (let [now (.instant clock)
+            [pending-requests _] (swap-vals! pending-sent-requests* dissoc id)]
+        (if-let [{:keys [p started] :as req} (get pending-requests id)]
+          (do
+            (trace this trace/received-response req resp started now)
+            (deliver p (if error resp result)))
+          (trace this trace/received-unmatched-response resp now)))
+      (catch Throwable e
+        (log-error-receiving this e resp))))
   (receive-request [this context {:keys [id method params] :as req}]
     (let [started (.instant clock)
           resp (lsp.responses/response id)]
@@ -345,15 +370,18 @@
           (log-error-receiving this e req)
           (async/>!! output-ch (internal-error-response resp req))))))
   (receive-notification [this context {:keys [method params] :as notif}]
-    (let [now (.instant clock)]
-      (trace this trace/received-notification notif now)
-      (if (= method "$/cancelRequest")
-        (if-let [pending-req (get @pending-received-requests* (:id params))]
-          (p/cancel! pending-req)
-          (trace this trace/received-unmatched-cancellation-notification notif now))
-        (let [result (receive-notification method context params)]
-          (when (identical? ::method-not-found result)
-            (protocols.endpoint/log this :warn "received unexpected notification" method)))))))
+    (try
+      (let [now (.instant clock)]
+        (trace this trace/received-notification notif now)
+        (if (= method "$/cancelRequest")
+          (if-let [pending-req (get @pending-received-requests* (:id params))]
+            (p/cancel! pending-req)
+            (trace this trace/received-unmatched-cancellation-notification notif now))
+          (let [result (receive-notification method context params)]
+            (when (identical? ::method-not-found result)
+              (protocols.endpoint/log this :warn "received unexpected notification" method)))))
+      (catch Throwable e
+        (log-error-receiving this e notif)))))
 
 (defn set-trace-level [server trace-level]
   (update server :tracer* reset! (trace/tracer-for-level trace-level)))
