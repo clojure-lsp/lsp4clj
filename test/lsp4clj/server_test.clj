@@ -133,6 +133,37 @@
     (is (nil? (server/send-notification server "req" {:body "foo"})))
     (server/shutdown server)))
 
+(deftest should-receive-receive-response-to-request-sent-while-processing-notification
+  ;; https://github.com/clojure-lsp/clojure-lsp/issues/1500
+  (let [input-ch (async/chan 3)
+        output-ch (async/chan 3)
+        server (server/chan-server {:output-ch output-ch
+                                    :input-ch input-ch})
+        client-resp (promise)]
+    (server/start server nil)
+    (with-redefs [server/receive-notification (fn [& _args]
+                                                (let [req (server/send-request server "server-sent-request" {:body "foo"})
+                                                      _ (Thread/sleep 100)
+                                                      resp (server/deref-or-cancel req 1000 :broke-deadlock)]
+                                                  (deliver client-resp resp)))]
+      ;; The first pass of this fix used a `(chan 1)` instead of
+      ;; `(sliding-buffer 100)`. It worked when the client sent only two
+      ;; messages before the server could finish the first, but not when it sent
+      ;; 3 or more. The first notif made the server start sleeping, the second
+      ;; filled up the channel's buffer, and the third blocked on putting onto
+      ;; the channel, meaning the client response on the next few lines never
+      ;; got through. So these lines check that "several" client messages can be
+      ;; queued. See notes in lsp4clj.server for caveats about what "several"
+      ;; means.
+      (async/put! input-ch (lsp.requests/notification "client-sent-notif" {:input 1}))
+      (async/put! input-ch (lsp.requests/notification "client-sent-notif" {:input 2}))
+      (async/put! input-ch (lsp.requests/notification "client-sent-notif" {:input 3}))
+      (let [client-rcvd-request (h/assert-take output-ch)]
+        (is (= "server-sent-request" (:method client-rcvd-request)))
+        (async/put! input-ch (lsp.responses/response (:id client-rcvd-request) {:processed true})))
+      (is (= {:processed true} (deref client-resp 10000 :timed-out))))
+    (server/shutdown server)))
+
 (deftest should-cancel-request-when-cancellation-notification-receieved
   (let [input-ch (async/chan 3)
         output-ch (async/chan 3)
