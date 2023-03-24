@@ -133,7 +133,7 @@
     (is (nil? (server/send-notification server "req" {:body "foo"})))
     (server/shutdown server)))
 
-(deftest should-receive-receive-response-to-request-sent-while-processing-notification
+(deftest should-receive-response-to-request-sent-while-processing-notification
   ;; https://github.com/clojure-lsp/clojure-lsp/issues/1500
   (let [input-ch (async/chan 3)
         output-ch (async/chan 3)
@@ -314,6 +314,46 @@
       (future-cancel req)
       (is (thrown? java.util.concurrent.CancellationException
                    (.get req 100 java.util.concurrent.TimeUnit/MILLISECONDS)))
+      (server/shutdown server))))
+
+(deftest request-should-behave-like-a-promesa-promise
+  (testing "before being handled"
+    (let [input-ch (async/chan 3)
+          output-ch (async/chan 3)
+          server (server/chan-server {:output-ch output-ch
+                                      :input-ch input-ch})
+          _ (server/start server nil)
+          req (p/promise (server/send-request server "req" {:body "foo"}))]
+      (is (not (p/done? req)))
+      (server/shutdown server)))
+  (testing "after response"
+    (let [input-ch (async/chan 3)
+          output-ch (async/chan 3)
+          server (server/chan-server {:output-ch output-ch
+                                      :input-ch input-ch})
+          _ (server/start server nil)
+          req (p/promise (server/send-request server "req" {:body "foo"}))
+          client-rcvd-msg (h/assert-take output-ch)]
+      (async/put! input-ch (lsp.responses/response (:id client-rcvd-msg) {:processed 1}))
+      (is (= {:processed 2} (-> req
+                                (p/timeout 1000 :test-timeout)
+                                (p/then #(update % :processed inc))
+                                (p/extract))))
+      (is (p/done? req))
+      (is (p/resolved? req))
+      (is (not (p/rejected? req)))
+      (is (not (p/cancelled? req)))
+      (server/shutdown server)))
+  (testing "after cancellation"
+    (let [input-ch (async/chan 3)
+          output-ch (async/chan 3)
+          server (server/chan-server {:output-ch output-ch
+                                      :input-ch input-ch})
+          _ (server/start server nil)
+          req (p/promise (server/send-request server "req" {:body "foo"}))]
+      (p/cancel! req)
+      (is (p/done? req))
+      (is (p/cancelled? req))
       (server/shutdown server))))
 
 (def fixed-clock

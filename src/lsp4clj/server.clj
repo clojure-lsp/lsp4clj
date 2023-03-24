@@ -9,7 +9,7 @@
    [lsp4clj.protocols.endpoint :as protocols.endpoint]
    [lsp4clj.trace :as trace]
    [promesa.core :as p]
-   [promesa.protocols])
+   [promesa.protocols :as p.protocols])
   (:import
    (java.util.concurrent CancellationException)))
 
@@ -31,7 +31,7 @@
 (defprotocol IBlockingDerefOrCancel
   (deref-or-cancel [this timeout-ms timeout-val]))
 
-(defrecord PendingRequest [p cancelled? id method started server]
+(defrecord PendingRequest [p id method started server]
   clojure.lang.IDeref
   (deref [_] (deref p))
   clojure.lang.IBlockingDeref
@@ -39,36 +39,31 @@
     (deref p timeout-ms timeout-val))
   IBlockingDerefOrCancel
   (deref-or-cancel [this timeout-ms timeout-val]
-    (let [result (deref this timeout-ms ::timeout)]
-      (if (= ::timeout result)
+    (let [result (deref p timeout-ms ::timeout)]
+      (if (identical? ::timeout result)
         (do (future-cancel this)
             timeout-val)
         result)))
   clojure.lang.IPending
-  (isRealized [_] (realized? p))
+  (isRealized [_] (p/done? p))
   java.util.concurrent.Future
-  (get [this]
-    (let [result (deref this)]
-      (if (= ::cancelled result)
-        (throw (java.util.concurrent.CancellationException.))
+  (get [_] (deref p))
+  (get [_ timeout unit]
+    (let [result (deref p (.toMillis unit timeout) ::timeout)]
+      (if (identical? ::timeout result)
+        (throw (java.util.concurrent.TimeoutException.))
         result)))
-  (get [this timeout unit]
-    (let [result (deref this (.toMillis unit timeout) ::timeout)]
-      (case result
-        ::cancelled (throw (java.util.concurrent.CancellationException.))
-        ::timeout (throw (java.util.concurrent.TimeoutException.))
-        result)))
-  (isCancelled [_] @cancelled?)
-  (isDone [this] (or (.isRealized this) (.isCancelled this)))
-  (cancel [this _interrupt?]
-    (if (.isDone this)
+  (isCancelled [_] (p/cancelled? p))
+  (isDone [_] (p/done? p))
+  (cancel [_ _interrupt?]
+    (if (p/done? p)
       false
-      (if (compare-and-set! cancelled? false true)
-        (do
-          (protocols.endpoint/send-notification server "$/cancelRequest" {:id id})
-          (deliver p ::cancelled)
-          true)
-        false))))
+      (do
+        (p/cancel! p)
+        (protocols.endpoint/send-notification server "$/cancelRequest" {:id id})
+        true)))
+  p.protocols/IPromiseFactory
+  (-promise [_] p))
 
 ;; Avoid error: java.lang.IllegalArgumentException: Multiple methods in multimethod 'simple-dispatch' match dispatch value: class lsp4clj.server.PendingRequest -> interface clojure.lang.IPersistentMap and interface clojure.lang.IDeref, and neither is preferred
 ;; Only when CIDER is running? See https://github.com/thi-ng/color/issues/10
@@ -96,8 +91,7 @@
   Sends `$/cancelRequest` only once, though `lsp4clj.server/deref-or-cancel` or
   `future-cancel` can be called multiple times."
   [id method started server]
-  (map->PendingRequest {:p (promise)
-                        :cancelled? (atom false)
+  (map->PendingRequest {:p (p/deferred)
                         :id id
                         :method method
                         :started started
@@ -222,7 +216,7 @@
     (async/put! trace-ch [:debug trace-body])))
 
 (defrecord PendingReceivedRequest [result-promise cancelled?]
-  promesa.protocols/ICancellable
+  p.protocols/ICancellable
   (-cancel! [_]
     (p/cancel! result-promise)
     (reset! cancelled? true))
@@ -330,7 +324,7 @@
         (if-let [{:keys [p started] :as req} (get pending-requests id)]
           (do
             (trace this trace/received-response req resp started now)
-            (deliver p (if error resp result)))
+            (p/resolve! p (if error resp result)))
           (trace this trace/received-unmatched-response resp now)))
       (catch Throwable e
         (log-error-receiving this e resp))))
