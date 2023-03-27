@@ -164,6 +164,57 @@
       (is (= {:processed true} (deref client-resp 10000 :timed-out))))
     (server/shutdown server)))
 
+(deftest should-fail-pending-requests-if-too-many-inbound-messages-are-buffered
+  ;; * If the server sends a request, and blocks waiting for the response,
+  ;; * and if the client sends too many other messages before responding,
+  ;; * then the server's buffer of unprocessed inbound messages will fill up.
+  ;; To avoid dropping messages or buffering endlessly, the server eventually
+  ;; aborts its request.
+  (with-redefs [server/input-buffer-size 5]
+    (let [input-ch (async/chan 3)
+          output-ch (async/chan 3)
+          server (server/chan-server {:output-ch output-ch
+                                      :input-ch input-ch})
+          client-req-id* (atom 0)
+          client-req (fn [body]
+                       (async/put! input-ch (lsp.requests/request (swap! client-req-id* inc)
+                                                                  "client-sent-request"
+                                                                  body)))]
+      (server/start server nil)
+      (with-redefs [server/receive-request (fn [_ _ {:keys [server-action] :as client-req}]
+                                             (if (= :block server-action)
+                                               (let [req (server/send-request server "server-sent-request" {:body "foo"})]
+                                                 (try
+                                                   (deref req)
+                                                   {:processed client-req}
+                                                   (catch Throwable _
+                                                     {:error {:result :deref-aborted}})))
+                                               {:processed client-req}))]
+        ;; The client sends a request which causes the server to send its own
+        ;; request. The server starts blocking, waiting for the client to respond.
+        (client-req {:server-action :block})
+        ;; The client receives the server's request but doesn't respond yet.
+        (is (= "server-sent-request" (:method (h/assert-take output-ch))))
+        ;; Before responding to the server's request, the client sends many other
+        ;; messages. The server will buffer these messages.
+        (dotimes [n server/input-buffer-size]
+          (client-req {:server-action :buffer, :input n}))
+        ;; The server is still blocking.
+        (is (h/assert-no-take output-ch))
+        ;; The client sends one more mesage, which is too many for the server to buffer.
+        (client-req {:server-action :overflow})
+        ;; To prioritize the client's inbound messages, the server's outbound
+        ;; request is aborted, causing it to stop waiting for a client response.
+        (is (= {:jsonrpc "2.0", :id 1, :error {:result :deref-aborted}}
+               (h/assert-take output-ch)))
+        ;; Now the server can process every other message from the client.
+        (dotimes [n server/input-buffer-size]
+          (is (= {:processed {:server-action :buffer, :input n}}
+                 (:result (h/assert-take output-ch)))))
+        (is (= {:processed {:server-action :overflow}}
+               (:result (h/assert-take output-ch)))))
+      (server/shutdown server))))
+
 (deftest should-cancel-request-when-cancellation-notification-receieved
   (let [input-ch (async/chan 3)
         output-ch (async/chan 3)

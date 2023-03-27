@@ -116,71 +116,15 @@
             (recur)))))
     ch))
 
-(defn ^:private dispatch-input
-  "Dispatches messages received on the input-ch based on message type. Returns a
-  channel which will close after the input-ch is closed."
-  [server context input-ch]
-  (let [;; In order to process some requests and (all) notifications in series,
-        ;; the language server sometimes needs to block client-initiated input.
-        ;; If the language server sends requests during that time, it needs to
-        ;; receive responses, even though it's blocking other input. Otherwise,
-        ;; it will end up in a deadlock, where it's waiting to receive a
-        ;; response off the input-ch and the input-ch isn't being read from
-        ;; because the server is blocking input. See
-        ;; https://github.com/clojure-lsp/clojure-lsp/issues/1500.
-
-        ;; The messages all arrive in order on the input-ch so to get to the
-        ;; client's response, we have to queue whatever other messages it's
-        ;; sent. We do that by storing them in a sliding buffer. Because of the
-        ;; sliding buffer:
-        ;; * if the client sends a message which causes the language server to
-        ;;   block, and
-        ;; * if the language server sends a request during that time, and
-        ;; * if the client sends more than 100 other messages between when the
-        ;;   language server started blocking and when the client responds to
-        ;;   the language server's request,
-        ;; * then the client's earliest messages will be dropped.
-        ;; The same is true in reverse.
-
-        ;; We process the client- and language-server-initiated messages in
-        ;; separate threads.
-        ;; * Threads, so the language server can use >!! and so that we can use
-        ;;   (>!! output-ch) to respect back pressure from clients that are slow
-        ;;   to read.
-        ;; * Separate, so one can continue while the other is blocked.
-
-        ;; (Jacob Maine): 100 is picked out of thin air. I have no idea how to
-        ;; estimate how big the buffer should be to avoid dropping messages. LSP
-        ;; communication tends to be very quiet, then very chatty, so it depends
-        ;; a lot on what the client and server are doing. I also don't know how
-        ;; many messages we could store without running into memory problems,
-        ;; since this is dependent on so many variables, not just the size of
-        ;; the JVM's memory, but also the size of the messages, which can be
-        ;; anywhere from a few bytes to megabytes.
-        server-initiated-in-ch (thread-loop
-                                 (async/sliding-buffer 100)
-                                 (fn [response]
-                                   (protocols.endpoint/receive-response server response)))
-        client-initiated-in-ch (thread-loop
-                                 (async/sliding-buffer 100)
-                                 (fn [[message-type message]]
-                                   (if (identical? :request message-type)
-                                     (protocols.endpoint/receive-request server context message)
-                                     (protocols.endpoint/receive-notification server context message))))]
-    (async/go-loop []
-      (if-let [message (async/<! input-ch)]
-        (let [message-type (coercer/input-message-type message)]
-          (case message-type
-            (:parse-error :invalid-request)
-            (protocols.endpoint/log server :error (format-error-code "Error reading message" message-type))
-            (:response.result :response.error)
-            (async/>! server-initiated-in-ch message)
-            (:request :notification)
-            (async/>! client-initiated-in-ch [message-type message]))
-          (recur))
-        (do
-          (async/close! server-initiated-in-ch)
-          (async/close! client-initiated-in-ch))))))
+(def input-buffer-size
+  ;; (Jacob Maine): This number is picked out of thin air. I have no idea how to
+  ;; estimate how big the buffer could or should be. LSP communication tends to
+  ;; be very quiet, then very chatty, so it depends a lot on what the client and
+  ;; server are doing. I also don't know how many messages we could store
+  ;; without running into memory problems, since this is dependent on so many
+  ;; variables, not just the size of the JVM's memory, but also the size of the
+  ;; messages, which can be anywhere from a few bytes to several megabytes.
+  1024)
 
 ;; Expose endpoint methods to language servers
 
@@ -253,13 +197,94 @@
   protocols.endpoint/IEndpoint
   (start [this context]
     ;; Start receiving messages.
-    (let [pipeline (dispatch-input this context input-ch)]
+    (let [;; In order to process some requests and (all) notifications in
+          ;; series, the language server sometimes needs to block
+          ;; client-initiated input. If the language server sends requests
+          ;; during that time, it needs to receive responses, even though it's
+          ;; blocking other input. Otherwise, it will end up in a deadlock,
+          ;; where it's waiting to receive a response off the input-ch and the
+          ;; input-ch isn't being read from because the server is blocking
+          ;; input. See https://github.com/clojure-lsp/clojure-lsp/issues/1500.
+
+          ;; To avoid this problem we processes client-initiated input (client
+          ;; requests and notifications) and server-initiated input (client
+          ;; responses) separately.
+
+          ;; If the server starts blocking waiting for a response, we buffer the
+          ;; client's requests and notifications until the server is prepared to
+          ;; process them.
+
+          ;; However, if too many client requests and notifications arrive
+          ;; before the response, the buffer fills up. In this situation, we
+          ;; abort all the server's pending requests, hoping that this will
+          ;; allow it to process the client's other messages. We do this to
+          ;; prioritize the client's messages over the server's.
+
+          ;; The situation is different in reverse. The client can also start
+          ;; blocking waiting for a server response. In the meantime, the server
+          ;; can send lots of messages. But this is bad behavior on the server's
+          ;; part. So in this scenario we drop the server's earliest requests
+          ;; and notifications.
+
+          ;; We do that by storing them in a sliding buffer. Because of the
+          ;; sliding buffer:
+          ;; * if the language server sends a message, and
+          ;; * if while processing that message the client sends a request which
+          ;;   causes it to block, and
+          ;; * if the language server sends too many other messages between when
+          ;;   the client started blocking and when the language server responds
+          ;;   to the client's request,
+          ;; * then the language server's messages will start being dropped,
+          ;;   starting from the earliest.
+
+          ;; We process the client- and language-server-initiated messages in
+          ;; separate threads.
+          ;; * Threads, so the language server can use >!! and so that we can use
+          ;;   (>!! output-ch) to respect back pressure from clients that are slow
+          ;;   to read.
+          ;; * Separate, so one can continue while the other is blocked.
+          server-initiated-in-ch (thread-loop
+                                   (async/sliding-buffer input-buffer-size)
+                                   (fn [response]
+                                     (protocols.endpoint/receive-response this response)))
+          client-initiated-in-ch (thread-loop
+                                   input-buffer-size
+                                   (fn [[message-type message]]
+                                     (if (identical? :request message-type)
+                                       (protocols.endpoint/receive-request this context message)
+                                       (protocols.endpoint/receive-notification this context message))))
+          reject-pending-sent-requests (fn [exception]
+                                         (doseq [pending-request (vals @pending-sent-requests*)]
+                                           (p/reject! (:p pending-request)
+                                                      exception)))
+          pipeline (async/go-loop []
+                     (if-let [message (async/<! input-ch)]
+                       (let [message-type (coercer/input-message-type message)]
+                         (case message-type
+                           (:parse-error :invalid-request)
+                           (protocols.endpoint/log this :error (format-error-code "Error reading message" message-type))
+                           (:response.result :response.error)
+                           (async/>! server-initiated-in-ch message)
+                           (:request :notification)
+                           (when-not (async/offer! client-initiated-in-ch [message-type message])
+                             ;; Buffers full. Fail any waiting pending requests and...
+                             (reject-pending-sent-requests
+                               (ex-info "Buffer of client messages exhausted." {}))
+                             ;; ... try again, but park this time, to respect
+                             ;; back pressure from the client.
+                             (async/>! client-initiated-in-ch [message-type message])))
+                         (recur))
+                       (do
+                         (async/close! server-initiated-in-ch)
+                         (async/close! client-initiated-in-ch))))]
       ;; Wait to stop receiving messages.
       (async/go
         ;; When pipeline closes, it indicates input-ch has closed. We're done
         ;; receiving.
         (async/<! pipeline)
         ;; Do cleanup.
+
+        (reject-pending-sent-requests (ex-info "Server shutting down." {}))
 
         ;; The [docs](https://clojuredocs.org/clojure.core.async/close!) for
         ;; `close!` say A) "The channel will no longer accept any puts", B)
