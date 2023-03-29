@@ -290,7 +290,7 @@
     (h/assert-take output-ch)
     (is (future-cancel req))
     (is (= "$/cancelRequest" (:method (h/assert-take output-ch))))
-    (is (not (future-cancel req)))
+    (is (future-cancel req))
     (h/assert-no-take output-ch)
     (server/shutdown server)))
 
@@ -402,9 +402,12 @@
                                       :input-ch input-ch})
           _ (server/start server nil)
           req (p/promise (server/send-request server "req" {:body "foo"}))]
+      (h/assert-take output-ch)
       (p/cancel! req)
       (is (p/done? req))
       (is (p/cancelled? req))
+      (is (= {:jsonrpc "2.0", :method "$/cancelRequest", :params {:id 1}}
+             (h/assert-take output-ch)))
       (server/shutdown server))))
 
 (def fixed-clock

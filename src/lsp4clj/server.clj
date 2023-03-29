@@ -31,7 +31,7 @@
 (defprotocol IBlockingDerefOrCancel
   (deref-or-cancel [this timeout-ms timeout-val]))
 
-(defrecord PendingRequest [p id method started server]
+(defrecord PendingRequest [p id method started]
   clojure.lang.IDeref
   (deref [_] (deref p))
   clojure.lang.IBlockingDeref
@@ -56,12 +56,8 @@
   (isCancelled [_] (p/cancelled? p))
   (isDone [_] (p/done? p))
   (cancel [_ _interrupt?]
-    (if (p/done? p)
-      false
-      (do
-        (p/cancel! p)
-        (protocols.endpoint/send-notification server "$/cancelRequest" {:id id})
-        true)))
+    (p/cancel! p)
+    (p/cancelled? p))
   p.protocols/IPromiseFactory
   (-promise [_] p))
 
@@ -91,11 +87,17 @@
   Sends `$/cancelRequest` only once, though `lsp4clj.server/deref-or-cancel` or
   `future-cancel` can be called multiple times."
   [id method started server]
-  (map->PendingRequest {:p (p/deferred)
-                        :id id
-                        :method method
-                        :started started
-                        :server server}))
+  ;; Chaining `(-> (p/deferred) (p/catch ...))` seems like it should work, but
+  ;; doesn't.
+  (let [p (p/deferred)]
+    (p/catch p CancellationException
+      (fn [ex]
+        (protocols.endpoint/send-notification server "$/cancelRequest" {:id id})
+        (p/rejected ex)))
+    (map->PendingRequest {:p p
+                          :id id
+                          :method method
+                          :started started})))
 
 (defn ^:private format-error-code [description error-code]
   (let [{:keys [code message]} (lsp.errors/by-key error-code)]
