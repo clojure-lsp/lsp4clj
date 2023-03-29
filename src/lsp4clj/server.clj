@@ -38,10 +38,10 @@
   (deref [_ timeout-ms timeout-val]
     (deref p timeout-ms timeout-val))
   IBlockingDerefOrCancel
-  (deref-or-cancel [this timeout-ms timeout-val]
+  (deref-or-cancel [_ timeout-ms timeout-val]
     (let [result (deref p timeout-ms ::timeout)]
       (if (identical? ::timeout result)
-        (do (future-cancel this)
+        (do (p/cancel! p)
             timeout-val)
         result)))
   clojure.lang.IPending

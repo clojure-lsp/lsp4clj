@@ -385,11 +385,15 @@
           _ (server/start server nil)
           req (p/promise (server/send-request server "req" {:body "foo"}))
           client-rcvd-msg (h/assert-take output-ch)]
-      (async/put! input-ch (lsp.responses/response (:id client-rcvd-msg) {:processed 1}))
-      (is (= {:processed 2} (-> req
-                                (p/timeout 1000 :test-timeout)
-                                (p/then #(update % :processed inc))
-                                (p/extract))))
+      (async/put! input-ch (lsp.responses/response (:id client-rcvd-msg) {:result :processed
+                                                                          :value 1}))
+      (is (= {:result :processed
+              :value 2}
+             (-> req
+                 (p/timeout 1000 {:result :test-timeout
+                                  :value 1})
+                 (p/then #(update % :value inc))
+                 (deref))))
       (is (p/done? req))
       (is (p/resolved? req))
       (is (not (p/rejected? req)))
