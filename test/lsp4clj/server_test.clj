@@ -203,7 +203,7 @@
         (is (h/assert-no-take output-ch))
         ;; The client sends one more mesage, which is too many for the server to buffer.
         (client-req {:server-action :overflow})
-        ;; To prioritize the client's inbound messages, the server's outbound
+        ;; To avoid blocking the client's inbound messages, the server's outbound
         ;; request is aborted, causing it to stop waiting for a client response.
         (is (= {:jsonrpc "2.0", :id 1, :error {:result :deref-aborted}}
                (h/assert-take output-ch)))

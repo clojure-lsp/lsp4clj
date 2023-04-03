@@ -3,8 +3,8 @@
 ## Unreleased
 
 - Server requests can be treated as promesa promises.
-- In certain blocking situations server will drop its pending sent requests to
-  prioritize the client's messages.
+- In certain situations the server will abort its pending sent requests to avoid
+  blocking the client's messages.
 
 ## v1.8.1
 
