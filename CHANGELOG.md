@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Deprecate `lsp4clj.socket-server` and document preferred alternative in the README.
+
 ## v1.7.3
 
 ## v1.7.2
