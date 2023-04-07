@@ -90,10 +90,10 @@
   ;; Chaining `(-> (p/deferred) (p/catch ...))` seems like it should work, but
   ;; doesn't.
   (let [p (p/deferred)]
+    ;; side-effect of cancellation:
     (p/catch p CancellationException
-      (fn [ex]
-        (protocols.endpoint/send-notification server "$/cancelRequest" {:id id})
-        (p/rejected ex)))
+      (fn [_]
+        (protocols.endpoint/send-notification server "$/cancelRequest" {:id id})))
     (map->PendingRequest {:p p
                           :id id
                           :method method
@@ -221,11 +221,9 @@
           ;; If the server blocks waiting for a response, we have to set aside
           ;; the other inbound requests and notifications, so that we can get to
           ;; the response. That is, while the server is blocking we cannot stop
-          ;; reading input. Otherwise, the server will end up in a deadlock,
-          ;; where it's waiting to receive a response off the input-ch but new
-          ;; messages aren't being put on the input-ch because the server is
-          ;; blocked. See
-          ;; https://github.com/clojure-lsp/clojure-lsp/issues/1500.
+          ;; accepting input. Otherwise, the server will end up in a deadlock,
+          ;; where it's waiting to receive a response, but the response is
+          ;; waiting to be accepted.
 
           ;; To accomplish this we processes inbound requests and notifications
           ;; separately from inbound responses. If the server starts blocking
