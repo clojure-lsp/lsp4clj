@@ -7,7 +7,11 @@
    [clojure.java.io :as io]
    [clojure.string :as string])
   (:import
-   (java.io EOFException InputStream OutputStream)))
+   (java.io
+    EOFException
+    IOException
+    InputStream
+    OutputStream)))
 
 (set! *warn-on-reflection* true)
 
@@ -72,15 +76,18 @@
 (defn ^:private read-header-line
   "Reads a line of input. Blocks if there are no messages on the input."
   [^InputStream input]
-  (let [s (java.lang.StringBuilder.)]
-    (loop []
-      (let [b (.read input)] ;; blocks, presumably waiting for next message
-        (case b
-          -1 ::eof ;; end of stream
-          #_lf 10 (str s) ;; finished reading line
-          #_cr 13 (recur) ;; ignore carriage returns
-          (do (.append s (char b)) ;; byte == char because header is in US-ASCII
-              (recur)))))))
+  (try
+    (let [s (java.lang.StringBuilder.)]
+      (loop []
+        (let [b (.read input)] ;; blocks, presumably waiting for next message
+          (case b
+            -1 ::eof ;; end of stream
+            #_lf 10 (str s) ;; finished reading line
+            #_cr 13 (recur) ;; ignore carriage returns
+            (do (.append s (char b)) ;; byte == char because header is in US-ASCII
+                (recur))))))
+    (catch IOException _e
+      ::eof)))
 
 (defn input-stream->input-chan
   "Returns a channel which will yield parsed messages that have been read off

@@ -4,7 +4,7 @@ A [Language Server Protocol](https://microsoft.github.io/language-server-protoco
 
 [![Clojars Project](https://img.shields.io/clojars/v/com.github.clojure-lsp/lsp4clj.svg)](https://clojars.org/com.github.clojure-lsp/lsp4clj)
 
-lsp4clj reads and writes from stdio, parsing JSON-RPC according to the LSP spec. It provides tools to allow server implementors to receive, process, and respond to any of the methods defined in the LSP spec, and to send their own requests and notifications to clients.
+lsp4clj reads and writes from io streams, parsing JSON-RPC according to the LSP spec. It provides tools to allow server implementors to receive, process, and respond to any of the methods defined in the LSP spec, and to send their own requests and notifications to clients.
 
 ## Usage
 
@@ -119,15 +119,25 @@ First, if the server's input is closed, it will shut down too. Second, if you ca
 
 When a server shuts down it stops reading input, finishes processing the messages it has in flight, and then closes is output. Finally it closes its `:log-ch` and `:trace-ch`. As such, it should probably not be shut down until the LSP `exit` notification (as opposed to the `shutdown` request) to ensure all messages are received. `lsp4clj.server/shutdown` will not return until all messages have been processed, or until 10 seconds have passed, whichever happens sooner. It will return `:done` in the first case and `:timeout` in the second.
 
-### Socket server
+## Other types of servers
 
-The `stdio-server` is the most commonly used, but the library also provides a `lsp4clj.socket-server/server`.
+So far the examples have focused on `lsp4clj.io-server/stdio-server`, because many clients communicate over stdio by default. The client opens a subprocess for the LSP server, then starts sending messages to the process via the process's stdin and reading messages from it on its stdout.
+
+Many clients can also communicate over a socket. Typically the client starts a socket server, then passes a command-line argument to the LSP subprocess, telling it what port to connect to. The server is expected to connect to that port and use it to send and receive messages. In lsp4clj, that can be accomplished with `lsp4clj.io-server/server`:
 
 ```clojure
-(lsp4clj.socket-server/server {:port 61235})
+(defn socket-server [{:keys [host port]}]
+  {:pre [(or (nil? host) (string? host))
+         (and (int? port) (<= 1024 port 65535))]}
+  (let [addr (java.net.InetAddress/getByName host) ;; nil host == loopback
+        sock (java.net.Socket. ^java.net.InetAddress addr ^int port)]
+    (lsp4clj.io-server/server {:in sock
+                               :out sock})))
 ```
 
-This will start listening on the provided port, blocking until a client makes a connection. When the connection is made it returns a lsp4clj server that has the same behavior as a `stdio-server`, except that messages are exchanged over the socket. When the server is shut down, the connection will be closed.
+`lsp4clj.io-server/server` accepts a pair of options `:in` and `:out`. These will be coerced to a `java.io.InputStream` and `java.io.OutputStream` via `clojure.java.io/input-stream` and `clojure.java.io/output-stream`, respectively. The example above works because a `java.net.Socket` can be coerced to both an input and output stream via this mechanism.
+
+A similar approach can be used to connect over pipes.
 
 ## Development details
 
@@ -156,7 +166,11 @@ You may also find `lsp4clj.server/chan-server` a useful alternative to `stdio-se
 
 ## Caveats
 
-You must not print to stdout while a `stdio-server` is running. This will corrupt its output stream and clients will receive malformed messages. To protect a block of code from writing to stdout, wrap it with `lsp4clj.server/discarding-stdout`. The `receive-notification` and `receive-request` multimethods are already protected this way, but tasks started outside of these multimethods need this protection added. Consider using a `lsp4clj.socket-server/server` to avoid this problem.
+You must not print to stdout while a `stdio-server` is running. This will corrupt its output stream. Clients will receive malformed messages, and either throw errors or stop responding.
+
+From experience, it's dismayingly easy to leave in an errant `prn` or `time` and end up with a non-responsive client. For this reason, we highly recommend supporting communication over sockets (see [other types of servers](#other-types-of-servers)) which are immune to this problem. However, since the choice of whether to use sockets or stdio is ultimately up to the client, you may have no choice but to support both.
+
+lsp4clj provides one tool to avoid accidental writes to stdout (or rather to `*out*`, which is usually the same as `System.out`). To protect a block of code from writing to `*out*`, wrap it with `lsp4clj.server/discarding-stdout`. The `receive-notification` and `receive-request` multimethods are already protected this way, but tasks started outside of these multimethods or that run in separate threads need this protection added.
 
 ## Known lsp4clj users
 
