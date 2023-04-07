@@ -4,7 +4,7 @@
   <packaging>jar</packaging>
   <groupId>com.github.clojure-lsp</groupId>
   <artifactId>lsp4clj</artifactId>
-  <version>1.7.3</version>
+  <version>1.7.4</version>
   <name>lsp4clj</name>
   <licenses>
     <license>
@@ -58,6 +58,6 @@
     <url>https://github.com/clojure-lsp/lsp4clj</url>
     <connection>scm:git:git://github.com/clojure-lsp/lsp4clj.git</connection>
     <developerConnection>scm:git:ssh://git@github.com/clojure-lsp/lsp4clj.git</developerConnection>
-    <tag>v1.7.3</tag>
+    <tag>v1.7.4</tag>
   </scm>
 </project>
