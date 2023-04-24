@@ -228,7 +228,7 @@
           ;; To accomplish this we processes inbound requests and notifications
           ;; separately from inbound responses. If the server starts blocking
           ;; waiting for a response, we buffer the inbound requests and
-          ;; notificatons until the server is prepared to process them.
+          ;; notifications until the server is prepared to process them.
 
           ;; If the buffer becomes full, we assume that the server isn't
           ;; handling inbound requests and notifcations because it's waiting for
@@ -241,7 +241,7 @@
 
           ;; This ensures we don't drop any client messages, though we could
           ;; stop reading them if the server keeps blocking. If we're lucky
-          ;; either the language server will unblock, or the client will decided
+          ;; either the language server will unblock, or the client will decide
           ;; to stop sending messages because it's failed to receive a server
           ;; response (i.e., we will have managed to apply backpressure to the
           ;; client). If we're unlucky, the server could keep blocking forever.
