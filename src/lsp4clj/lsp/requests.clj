@@ -25,22 +25,26 @@
 
   https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification/#workDoneProgress
   "
-  [percentage message progress-token]
-  (when progress-token
-    (let [percentage (int (clamp percentage 0 100))
-          progress (case percentage
-                     ;; TODO: this is a bit restricting. Technically the 'begin'
-                     ;; message can start at a higher `percentage`, and it can
-                     ;; have a `message`. To work around this, it's possible to
-                     ;; publish a 'begin' immediately followed by a 'progress'
-                     ;; with the desired percentage and message.
-                     0 {:kind :begin
-                        :title message
-                        :percentage 0}
-                     100 {:kind :end
-                          :message message}
-                     {:kind :report
-                      :message message
-                      :percentage percentage})]
-      {:token progress-token
-       :value progress})))
+  ([message progress-token]
+   (work-done-progress nil message progress-token))
+  ([percentage message progress-token]
+   (when progress-token
+     (let [percentage (when percentage (int (clamp percentage 0 100)))
+           progress (cond
+                      ;; TODO: this is a bit restricting. Technically the 'begin'
+                      ;; message can start at a higher `percentage`, and it can
+                      ;; have a `message`. To work around this, it's possible to
+                      ;; publish a 'begin' immediately followed by a 'progress'
+                      ;; with the desired percentage and message.
+                      (= 0 percentage) {:kind :begin
+                                        :title message
+                                        :percentage 0}
+                      (= 100 percentage) {:kind :end
+                                          :message message}
+                      :else
+                      (cond->
+                       {:kind :report
+                        :message message}
+                        percentage (assoc :percentage percentage)))]
+       {:token progress-token
+        :value progress}))))

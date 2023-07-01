@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Allow create work-done-progress without percentages, for report only.
+
 ## v1.7.4
 
 - Deprecate `lsp4clj.socket-server` and document preferred alternative in the README.
