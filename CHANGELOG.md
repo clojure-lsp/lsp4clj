@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+## v1.8.0
+
 - Allow create work-done-progress without percentages, for report only.
 
 ## v1.7.4
