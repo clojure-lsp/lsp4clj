@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Bump promesa to `10.0.571`
+
 ## v1.8.0
 
 - Allow create work-done-progress without percentages, for report only.
