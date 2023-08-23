@@ -385,18 +385,85 @@
           _ (server/start server nil)
           req (p/promise (server/send-request server "req" {:body "foo"}))
           client-rcvd-msg (h/assert-take output-ch)]
-      (async/put! input-ch (lsp.responses/response (:id client-rcvd-msg) {:result :processed
-                                                                          :value 1}))
-      (is (= {:result :processed
-              :value 2}
+      (async/put! input-ch (lsp.responses/response (:id client-rcvd-msg) {:result "good"}))
+      (is (= {:result :client-success
+              :value 2
+              :resp {:result "good"}}
              (-> req
-                 (p/timeout 1000 {:result :test-timeout
-                                  :value 1})
+                 (p/then (fn [resp] {:result :client-success
+                                     :value 1
+                                     :resp resp}))
+                 (p/catch (fn [error-resp-ex] {:result :client-error
+                                               :value 10
+                                               :resp (ex-data error-resp-ex)}))
+                 (p/timeout 1000 {:result :timeout
+                                  :value 100})
                  (p/then #(update % :value inc))
                  (deref))))
       (is (p/done? req))
       (is (p/resolved? req))
       (is (not (p/rejected? req)))
+      (is (not (p/cancelled? req)))
+      (server/shutdown server)))
+  (testing "after timeout"
+    (let [input-ch (async/chan 3)
+          output-ch (async/chan 3)
+          server (server/chan-server {:output-ch output-ch
+                                      :input-ch input-ch})
+          _ (server/start server nil)
+          req (p/promise (server/send-request server "req" {:body "foo"}))]
+      (is (= {:result :timeout
+              :value 101}
+             (-> req
+                 (p/then (fn [resp] {:result :client-success
+                                     :value 1
+                                     :resp resp}))
+                 (p/catch (fn [error-resp-ex] {:result :client-error
+                                               :value 10
+                                               :resp (ex-data error-resp-ex)}))
+                 (p/timeout 300 {:result :timeout
+                                 :value 100})
+                 (p/then #(update % :value inc))
+                 (deref))))
+      (is (not (p/done? req)))
+      (is (not (p/resolved? req)))
+      (is (not (p/rejected? req)))
+      (is (not (p/cancelled? req)))
+      (server/shutdown server)))
+  (testing "after client error"
+    (let [input-ch (async/chan 3)
+          output-ch (async/chan 3)
+          server (server/chan-server {:output-ch output-ch
+                                      :input-ch input-ch})
+          _ (server/start server nil)
+          req (p/promise (server/send-request server "req" {:body "foo"}))
+          client-rcvd-msg (h/assert-take output-ch)]
+      (async/put! input-ch
+                  (-> (lsp.responses/response (:id client-rcvd-msg))
+                      (lsp.responses/error {:code 1234
+                                            :message "Something bad"
+                                            :data {:body "foo"}})))
+      (is (= {:result :client-error
+              :value 11
+              :resp {:jsonrpc "2.0",
+                     :id 1,
+                     :error {:code 1234,
+                             :message "Something bad",
+                             :data {:body "foo"}}}}
+             (-> req
+                 (p/then (fn [resp] {:result :client-success
+                                     :value 1
+                                     :resp resp}))
+                 (p/catch (fn [error-resp-ex] {:result :client-error
+                                               :value 10
+                                               :resp (ex-data error-resp-ex)}))
+                 (p/timeout 1000 {:result :timeout
+                                  :value 100})
+                 (p/then #(update % :value inc))
+                 (deref))))
+      (is (p/done? req))
+      (is (not (p/resolved? req)))
+      (is (p/rejected? req))
       (is (not (p/cancelled? req)))
       (server/shutdown server)))
   (testing "after cancellation"

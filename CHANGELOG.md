@@ -2,9 +2,11 @@
 
 ## Unreleased
 
-- Server requests can be treated as promesa promises.
+- Avoid blocking client responses behind client requests or notifications.
 - In certain situations the server will abort its pending sent requests to avoid
   blocking the client's messages.
+- Server requests can be treated as promesa promises.
+- Bump promesa to `10.0.594`
 
 ## v1.8.1
 

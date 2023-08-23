@@ -28,6 +28,9 @@
   `(binding [*out* null-output-stream-writer]
      ~@body))
 
+(defn- resolve-ex-data [p]
+  (p/catch p (fn [ex] (or (ex-data ex) (p/rejected ex)))))
+
 (defprotocol IBlockingDerefOrCancel
   (deref-or-cancel [this timeout-ms timeout-val]))
 
@@ -36,10 +39,10 @@
   (deref [_] (deref p))
   clojure.lang.IBlockingDeref
   (deref [_ timeout-ms timeout-val]
-    (deref p timeout-ms timeout-val))
+    (deref (resolve-ex-data p) timeout-ms timeout-val))
   IBlockingDerefOrCancel
   (deref-or-cancel [_ timeout-ms timeout-val]
-    (let [result (deref p timeout-ms ::timeout)]
+    (let [result (deref (resolve-ex-data p) timeout-ms ::timeout)]
       (if (identical? ::timeout result)
         (do (p/cancel! p)
             timeout-val)
@@ -346,14 +349,9 @@
         (if-let [{:keys [p started] :as req} (get pending-requests id)]
           (do
             (trace this trace/received-response req resp started now)
-            ;; We resolve the promise whether or not the client completed the
-            ;; request successfully. The language-server is expected to
-            ;; determine whether there was an error with something like:
-            ;; `(let [{:keys [error] :as resp} (deref-or-cancel ,,,)])`
-            ;; It would be somewhat more elegant to reject the promise when the
-            ;; client had errors, so that the language-server could use tools
-            ;; like `p/catch`.
-            (p/resolve! p (if error resp result)))
+            (if error
+              (p/reject! p (ex-info "Received error response" resp))
+              (p/resolve! p result)))
           (trace this trace/received-unmatched-response resp now)))
       (catch Throwable e
         (log-error-receiving this e resp))))
