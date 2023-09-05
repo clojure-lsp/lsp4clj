@@ -97,11 +97,28 @@ Sending a request is similar, with `lsp4clj.server/send-request`. This method re
     response))
 ```
 
-The request object presents the same interface as `future`. It responds to `future-cancel` (which also sends `$/cancelRequest`), `realized?`, `future?`, `future-done?` and `future-cancelled?`.
+The request object presents the same interface as `future`. It responds to `realized?`, `future?`, `future-done?` and `future-cancelled?`.
 
-If the request is cancelled, later invocations of `deref` will return `:lsp4clj.server/cancelled`.
+If you call `future-cancel` on the request object, the server will send the client a `$/cancelRequest`. `$/cancelRequest` is sent only once, although `lsp4clj.server/deref-or-cancel` or `future-cancel` can be called multiple times. After a request is cancelled, later invocations of `deref` will return `:lsp4clj.server/cancelled`.
 
-`$/cancelRequest` is sent only once, although `lsp4clj.server/deref-or-cancel` or `future-cancel` can be called multiple times.
+Alternatively, you can convert the request to a promesa promise, and handle it using that library's tools:
+
+```clojure
+(let [request (lsp4clj.server/send-request server "..." params)]
+  (-> request
+      (promesa/promise)
+      (promesa/then (fn [response] {:result :client-success
+                                    :value 1
+                                    :resp response}))
+      (promesa/catch (fn [ex-response] {:result :client-error
+                                        :value 10
+                                        :resp (ex-data ex-response)}))
+      (promesa/timeout 10000 {:result :timeout
+                              :value 100})
+      (promesa/then #(update % :value inc))))
+```
+
+In this case `(promesa/cancel! request)` will send `$/cancelRequest`.
 
 ### Start and stop a server
 

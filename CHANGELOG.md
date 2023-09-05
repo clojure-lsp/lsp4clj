@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+- In certain situations the server will abort its pending sent requests to avoid
+  blocking the client's messages.
+- Server requests can be treated as promesa promises.
+- Bump promesa to `10.0.594`
+
 ## v1.8.1
 
 - Bump promesa to `10.0.571`
@@ -15,6 +20,8 @@
 - Deprecate `lsp4clj.socket-server` and document preferred alternative in the README.
 
 ## v1.7.3
+
+- Server continues receiving responses while it is blocking requests or notifications.
 
 ## v1.7.2
 

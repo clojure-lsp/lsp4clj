@@ -9,7 +9,7 @@
    [lsp4clj.protocols.endpoint :as protocols.endpoint]
    [lsp4clj.trace :as trace]
    [promesa.core :as p]
-   [promesa.protocols])
+   [promesa.protocols :as p.protocols])
   (:import
    (java.util.concurrent CancellationException)))
 
@@ -28,47 +28,41 @@
   `(binding [*out* null-output-stream-writer]
      ~@body))
 
+(defn- resolve-ex-data [p]
+  (p/catch p (fn [ex] (or (ex-data ex) (p/rejected ex)))))
+
 (defprotocol IBlockingDerefOrCancel
   (deref-or-cancel [this timeout-ms timeout-val]))
 
-(defrecord PendingRequest [p cancelled? id method started server]
+(defrecord PendingRequest [p id method started]
   clojure.lang.IDeref
   (deref [_] (deref p))
   clojure.lang.IBlockingDeref
   (deref [_ timeout-ms timeout-val]
-    (deref p timeout-ms timeout-val))
+    (deref (resolve-ex-data p) timeout-ms timeout-val))
   IBlockingDerefOrCancel
-  (deref-or-cancel [this timeout-ms timeout-val]
-    (let [result (deref this timeout-ms ::timeout)]
-      (if (= ::timeout result)
-        (do (future-cancel this)
+  (deref-or-cancel [_ timeout-ms timeout-val]
+    (let [result (deref (resolve-ex-data p) timeout-ms ::timeout)]
+      (if (identical? ::timeout result)
+        (do (p/cancel! p)
             timeout-val)
         result)))
   clojure.lang.IPending
-  (isRealized [_] (realized? p))
+  (isRealized [_] (p/done? p))
   java.util.concurrent.Future
-  (get [this]
-    (let [result (deref this)]
-      (if (= ::cancelled result)
-        (throw (java.util.concurrent.CancellationException.))
+  (get [_] (deref p))
+  (get [_ timeout unit]
+    (let [result (deref p (.toMillis unit timeout) ::timeout)]
+      (if (identical? ::timeout result)
+        (throw (java.util.concurrent.TimeoutException.))
         result)))
-  (get [this timeout unit]
-    (let [result (deref this (.toMillis unit timeout) ::timeout)]
-      (case result
-        ::cancelled (throw (java.util.concurrent.CancellationException.))
-        ::timeout (throw (java.util.concurrent.TimeoutException.))
-        result)))
-  (isCancelled [_] @cancelled?)
-  (isDone [this] (or (.isRealized this) (.isCancelled this)))
-  (cancel [this _interrupt?]
-    (if (.isDone this)
-      false
-      (if (compare-and-set! cancelled? false true)
-        (do
-          (protocols.endpoint/send-notification server "$/cancelRequest" {:id id})
-          (deliver p ::cancelled)
-          true)
-        false))))
+  (isCancelled [_] (p/cancelled? p))
+  (isDone [_] (p/done? p))
+  (cancel [_ _interrupt?]
+    (p/cancel! p)
+    (p/cancelled? p))
+  p.protocols/IPromiseFactory
+  (-promise [_] p))
 
 ;; Avoid error: java.lang.IllegalArgumentException: Multiple methods in multimethod 'simple-dispatch' match dispatch value: class lsp4clj.server.PendingRequest -> interface clojure.lang.IPersistentMap and interface clojure.lang.IDeref, and neither is preferred
 ;; Only when CIDER is running? See https://github.com/thi-ng/color/issues/10
@@ -96,12 +90,19 @@
   Sends `$/cancelRequest` only once, though `lsp4clj.server/deref-or-cancel` or
   `future-cancel` can be called multiple times."
   [id method started server]
-  (map->PendingRequest {:p (promise)
-                        :cancelled? (atom false)
-                        :id id
-                        :method method
-                        :started started
-                        :server server}))
+  (let [p (p/deferred)]
+    ;; Set up a side-effect so that when the Request is cancelled, we inform the
+    ;; client. This cannot be `(-> (p/deferred) (p/catch))` because that returns
+    ;; a promise which, when cancelled, does nothing because there's no
+    ;; exception handler chained onto it. Instead, we must cancel the
+    ;; `(p/deffered)` promise itself.
+    (p/catch p CancellationException
+      (fn [_]
+        (protocols.endpoint/send-notification server "$/cancelRequest" {:id id})))
+    (map->PendingRequest {:p p
+                          :id id
+                          :method method
+                          :started started})))
 
 (defn ^:private format-error-code [description error-code]
   (let [{:keys [code message]} (lsp.errors/by-key error-code)]
@@ -122,71 +123,15 @@
             (recur)))))
     ch))
 
-(defn ^:private dispatch-input
-  "Dispatches messages received on the input-ch based on message type. Returns a
-  channel which will close after the input-ch is closed."
-  [server context input-ch]
-  (let [;; In order to process some requests and (all) notifications in series,
-        ;; the language server sometimes needs to block client-initiated input.
-        ;; If the language server sends requests during that time, it needs to
-        ;; receive responses, even though it's blocking other input. Otherwise,
-        ;; it will end up in a deadlock, where it's waiting to receive a
-        ;; response off the input-ch and the input-ch isn't being read from
-        ;; because the server is blocking input. See
-        ;; https://github.com/clojure-lsp/clojure-lsp/issues/1500.
-
-        ;; The messages all arrive in order on the input-ch so to get to the
-        ;; client's response, we have to queue whatever other messages it's
-        ;; sent. We do that by storing them in a sliding buffer. Because of the
-        ;; sliding buffer:
-        ;; * if the client sends a message which causes the language server to
-        ;;   block, and
-        ;; * if the language server sends a request during that time, and
-        ;; * if the client sends more than 100 other messages between when the
-        ;;   language server started blocking and when the client responds to
-        ;;   the language server's request,
-        ;; * then the client's earliest messages will be dropped.
-        ;; The same is true in reverse.
-
-        ;; We process the client- and language-server-initiated messages in
-        ;; separate threads.
-        ;; * Threads, so the language server can use >!! and so that we can use
-        ;;   (>!! output-ch) to respect back pressure from clients that are slow
-        ;;   to read.
-        ;; * Separate, so one can continue while the other is blocked.
-
-        ;; (Jacob Maine): 100 is picked out of thin air. I have no idea how to
-        ;; estimate how big the buffer should be to avoid dropping messages. LSP
-        ;; communication tends to be very quiet, then very chatty, so it depends
-        ;; a lot on what the client and server are doing. I also don't know how
-        ;; many messages we could store without running into memory problems,
-        ;; since this is dependent on so many variables, not just the size of
-        ;; the JVM's memory, but also the size of the messages, which can be
-        ;; anywhere from a few bytes to megabytes.
-        server-initiated-in-ch (thread-loop
-                                 (async/sliding-buffer 100)
-                                 (fn [response]
-                                   (protocols.endpoint/receive-response server response)))
-        client-initiated-in-ch (thread-loop
-                                 (async/sliding-buffer 100)
-                                 (fn [[message-type message]]
-                                   (if (identical? :request message-type)
-                                     (protocols.endpoint/receive-request server context message)
-                                     (protocols.endpoint/receive-notification server context message))))]
-    (async/go-loop []
-      (if-let [message (async/<! input-ch)]
-        (let [message-type (coercer/input-message-type message)]
-          (case message-type
-            (:parse-error :invalid-request)
-            (protocols.endpoint/log server :error (format-error-code "Error reading message" message-type))
-            (:response.result :response.error)
-            (async/>! server-initiated-in-ch message)
-            (:request :notification)
-            (async/>! client-initiated-in-ch [message-type message]))
-          (recur))
-        (do
-          (async/close! server-initiated-in-ch)
-          (async/close! client-initiated-in-ch))))))
+(def input-buffer-size
+  ;; (Jacob Maine): This number is picked out of thin air. I have no idea how to
+  ;; estimate how big the buffer could or should be. LSP communication tends to
+  ;; be very quiet, then very chatty, so it depends a lot on what the client and
+  ;; server are doing. I also don't know how many messages we could store
+  ;; without running into memory problems, since this is dependent on so many
+  ;; variables, not just the size of the JVM's memory, but also the size of the
+  ;; messages, which can be anywhere from a few bytes to several megabytes.
+  1024)
 
 ;; Expose endpoint methods to language servers
 
@@ -222,7 +167,7 @@
     (async/put! trace-ch [:debug trace-body])))
 
 (defrecord PendingReceivedRequest [result-promise cancelled?]
-  promesa.protocols/ICancellable
+  p.protocols/ICancellable
   (-cancel! [_]
     (p/cancel! result-promise)
     (reset! cancelled? true))
@@ -259,13 +204,89 @@
   protocols.endpoint/IEndpoint
   (start [this context]
     ;; Start receiving messages.
-    (let [pipeline (dispatch-input this context input-ch)]
-      ;; Wait to stop receiving messages.
+    (let [;; The language server sometimes needs to stop processing inbound
+          ;; requests and notifications.
+
+          ;; We do this automatically whenever we receive a notification, so
+          ;; that we are sure the language server processes didChange before
+          ;; moving on to other requests. But the language server can also
+          ;; decide to do it itself, even in a request, by processing everything
+          ;; synchronously instead of returning a future.
+
+          ;; In a request (or even in a notification) the language server can
+          ;; send a request to the client and block waiting for a response.
+
+          ;; It's possible -- even likely -- that the client will send other
+          ;; messages between the time that the server sent its request and the
+          ;; time that the client responds.
+
+          ;; All inbound messages -- requests, notifications, and responses --
+          ;; come in on a single stream.
+
+          ;; If the server blocks waiting for a response, we have to set aside
+          ;; the other inbound requests and notifications, so that we can get to
+          ;; the response. That is, while the server is blocking we cannot stop
+          ;; accepting input. Otherwise, the server will end up in a deadlock,
+          ;; where it's waiting to receive a response, but the response is
+          ;; waiting to be accepted.
+
+          ;; To accomplish this we processes inbound requests and notifications
+          ;; separately from inbound responses. If the server starts blocking
+          ;; waiting for a response, we buffer the inbound requests and
+          ;; notifications until the server is prepared to process them.
+
+          ;; If the buffer becomes full, we assume that the server isn't
+          ;; handling inbound requests and notifcations because it's waiting for
+          ;; a response. So, following our assumption, we reject the server
+          ;; requests so that the server will stop waiting for the response.
+          ;; It's possible that this won't work -- our assumption might have
+          ;; been wrong and the server might have stalled for some other reason.
+          ;; So after rejecting, we park trying to add the latest inbound
+          ;; request or notification to the buffer.
+
+          ;; This ensures we don't drop any client messages, though we could
+          ;; stop reading them if the server keeps blocking. If we're lucky
+          ;; either the language server will unblock, or the client will decide
+          ;; to stop sending messages because it's failed to receive a server
+          ;; response (i.e., we will have managed to apply backpressure to the
+          ;; client). If we're unlucky, the server could keep blocking forever.
+          ;; In any case, this scenario -- where we stop reading messages -- is
+          ;; presumed to be both very rare and indicative of a problem that can
+          ;; be solved only in the client or the language server.
+          client-initiated-in-ch (thread-loop
+                                   input-buffer-size
+                                   (fn [[message-type message]]
+                                     (if (identical? :request message-type)
+                                       (protocols.endpoint/receive-request this context message)
+                                       (protocols.endpoint/receive-notification this context message))))
+          reject-pending-sent-requests (fn [exception]
+                                         (doseq [pending-request (vals @pending-sent-requests*)]
+                                           (p/reject! (:p pending-request)
+                                                      exception)))
+          pipeline (async/go-loop []
+                     (if-let [message (async/<! input-ch)]
+                       (let [message-type (coercer/input-message-type message)]
+                         (case message-type
+                           (:parse-error :invalid-request)
+                           (protocols.endpoint/log this :error (format-error-code "Error reading message" message-type))
+                           (:response.result :response.error)
+                           (protocols.endpoint/receive-response this message)
+                           (:request :notification)
+                           (when-not (async/offer! client-initiated-in-ch [message-type message])
+                             ;; Buffers full. Fail any waiting pending requests and...
+                             (reject-pending-sent-requests
+                               (ex-info "Buffer of client messages exhausted." {}))
+                             ;; ... try again, but park this time.
+                             (async/>! client-initiated-in-ch [message-type message])))
+                         (recur))
+                       (async/close! client-initiated-in-ch)))]
       (async/go
-        ;; When pipeline closes, it indicates input-ch has closed. We're done
-        ;; receiving.
+        ;; Wait to stop receiving messages.
         (async/<! pipeline)
-        ;; Do cleanup.
+        ;; The pipeline has closed, indicating input-ch has closed. We're done
+        ;; receiving. Do cleanup.
+
+        (reject-pending-sent-requests (ex-info "Server shutting down. Input is closed so no response is possible." {}))
 
         ;; The [docs](https://clojuredocs.org/clojure.core.async/close!) for
         ;; `close!` say A) "The channel will no longer accept any puts", B)
@@ -310,7 +331,7 @@
           req (lsp.requests/request id method body)
           pending-request (pending-request id method now this)]
       (trace this trace/sending-request req now)
-      ;; Important: record request before sending it, so it is sure to be
+      ;; Important: record request before sending it, so it's sure to be
       ;; available during receive-response.
       (swap! pending-sent-requests* assoc id pending-request)
       ;; respect back pressure from clients that are slow to read; (go (>!)) will not suffice
@@ -330,7 +351,9 @@
         (if-let [{:keys [p started] :as req} (get pending-requests id)]
           (do
             (trace this trace/received-response req resp started now)
-            (deliver p (if error resp result)))
+            (if error
+              (p/reject! p (ex-info "Received error response" resp))
+              (p/resolve! p result)))
           (trace this trace/received-unmatched-response resp now)))
       (catch Throwable e
         (log-error-receiving this e resp))))
