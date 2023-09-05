@@ -2,7 +2,6 @@
 
 ## Unreleased
 
-- Avoid blocking client responses behind client requests or notifications.
 - In certain situations the server will abort its pending sent requests to avoid
   blocking the client's messages.
 - Server requests can be treated as promesa promises.
