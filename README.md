@@ -192,3 +192,7 @@ lsp4clj provides one tool to avoid accidental writes to stdout (or rather to `*o
 ## Known lsp4clj users
 
 - [clojure-lsp](https://clojure-lsp.io/): A Clojure LSP server implementation.
+
+## Release
+
+To release a new version, run `bb tag x.y.z`, it should do all necessary changes and trigger a Github Action to deploy to clojars the new version.

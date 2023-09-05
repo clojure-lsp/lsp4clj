@@ -16,7 +16,8 @@
   (replace-in-file "CHANGELOG.md"
                    #"## Unreleased"
                    (format "## Unreleased\n\n## v%s" tag))
-  (shell "git add resources/LSP4CLJ_VERSION CHANGELOG.md")
+  (shell "clojure -T:build jar")
+  (shell "git add resources/LSP4CLJ_VERSION CHANGELOG.md pom.xml pom.properties")
   (shell (format "git commit -m \"Release: v%s\"" tag))
   (shell (str "git tag v" tag))
   (shell "git push origin HEAD")
