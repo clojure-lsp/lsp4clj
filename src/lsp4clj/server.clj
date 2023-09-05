@@ -90,10 +90,12 @@
   Sends `$/cancelRequest` only once, though `lsp4clj.server/deref-or-cancel` or
   `future-cancel` can be called multiple times."
   [id method started server]
-  ;; Chaining `(-> (p/deferred) (p/catch ...))` seems like it should work, but
-  ;; doesn't.
   (let [p (p/deferred)]
-    ;; side-effect of cancellation:
+    ;; Set up a side-effect so that when the Request is cancelled, we inform the
+    ;; client. This cannot be `(-> (p/deferred) (p/catch))` because that returns
+    ;; a promise which, when cancelled, does nothing because there's no
+    ;; exception handler chained onto it. Instead, we must cancel the
+    ;; `(p/deffered)` promise itself.
     (p/catch p CancellationException
       (fn [_]
         (protocols.endpoint/send-notification server "$/cancelRequest" {:id id})))
