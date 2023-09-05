@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+## v1.9.0
+
 - In certain situations the server will abort its pending sent requests to avoid
   blocking the client's messages.
 - Server requests can be treated as promesa promises.

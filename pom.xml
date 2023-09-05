@@ -4,7 +4,7 @@
   <packaging>jar</packaging>
   <groupId>com.github.clojure-lsp</groupId>
   <artifactId>lsp4clj</artifactId>
-  <version>1.8.1</version>
+  <version>1.9.0</version>
   <name>lsp4clj</name>
   <licenses>
     <license>
@@ -22,7 +22,7 @@
     <dependency>
       <groupId>funcool</groupId>
       <artifactId>promesa</artifactId>
-      <version>10.0.571</version>
+      <version>10.0.594</version>
     </dependency>
     <dependency>
       <groupId>cheshire</groupId>
@@ -58,6 +58,6 @@
     <url>https://github.com/clojure-lsp/lsp4clj</url>
     <connection>scm:git:git://github.com/clojure-lsp/lsp4clj.git</connection>
     <developerConnection>scm:git:ssh://git@github.com/clojure-lsp/lsp4clj.git</developerConnection>
-    <tag>v1.8.1</tag>
+    <tag>v1.9.0</tag>
   </scm>
 </project>
