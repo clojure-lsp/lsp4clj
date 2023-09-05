@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+## v1.9.1
+
 ## v1.9.0
 
 - In certain situations the server will abort its pending sent requests to avoid
