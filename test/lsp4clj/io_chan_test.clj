@@ -2,17 +2,33 @@
   (:require
    [clojure.core.async :as async]
    [clojure.string :as string]
-   [clojure.test :refer [deftest is testing]]
+   [clojure.test :refer [deftest is testing use-fixtures]]
    [lsp4clj.io-chan :as io-chan]
    [lsp4clj.test-helper :as h]))
 
 (set! *warn-on-reflection* true)
+
+(defn- silence-uncaught-exceptions [f]
+  (let [handler (Thread/getDefaultUncaughtExceptionHandler)]
+    (Thread/setDefaultUncaughtExceptionHandler
+      (reify Thread$UncaughtExceptionHandler
+        (uncaughtException [_this _thread _e])))
+    (f)
+    (Thread/setDefaultUncaughtExceptionHandler handler)))
+
+(use-fixtures :once silence-uncaught-exceptions)
 
 (defn ^:private message-lines [arr]
   (string/join "\r\n" arr))
 
 (defn mock-input-stream [^String input]
   (.getBytes input "utf-8"))
+
+(defn error-output-stream []
+  (proxy [java.io.OutputStream] []
+    (close [] (throw (java.io.IOException. "close failed")))
+    (flush [] (throw (java.io.IOException. "flush failed")))
+    (write [& _] (throw (java.io.IOException. "write failed")))))
 
 (deftest output-stream-should-camel-case-output
   (let [output-stream (java.io.ByteArrayOutputStream.)
@@ -49,6 +65,20 @@
                            ""
                            "{\"key\":\"äpfel\"}"])
            (.toString output-stream "utf-8")))))
+
+(deftest output-stream-error-should-close-output-channel
+  (testing "when JSON serialisation fails"
+    (let [output-stream (java.io.ByteArrayOutputStream.)
+          output-ch (io-chan/output-stream->output-chan output-stream)]
+      (async/>!! output-ch {:not-serializable output-stream})
+      (Thread/sleep 200)
+      (is (false? (async/put! output-ch {:test "should be closed"})))))
+  (testing "when an I/O exception occurs"
+    (let [output-stream (error-output-stream)
+          output-ch (io-chan/output-stream->output-chan output-stream)]
+      (async/>!! output-ch {:test "ok"})
+      (Thread/sleep 200)
+      (is (false? (async/put! output-ch {:test "should be closed"}))))))
 
 (deftest input-stream-should-kebab-case-input
   (let [input-stream (mock-input-stream
