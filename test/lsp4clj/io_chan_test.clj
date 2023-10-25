@@ -70,14 +70,14 @@
   (testing "when JSON serialisation fails"
     (let [output-stream (java.io.ByteArrayOutputStream.)
           output-ch (io-chan/output-stream->output-chan output-stream)]
-      (async/>!! output-ch {:not-serializable output-stream})
-      (Thread/sleep 200)
+      (async/>!! output-ch {:not-serializable (Object.)})
+      (Thread/sleep 50)
       (is (false? (async/put! output-ch {:test "should be closed"})))))
   (testing "when an I/O exception occurs"
     (let [output-stream (error-output-stream)
           output-ch (io-chan/output-stream->output-chan output-stream)]
       (async/>!! output-ch {:test "ok"})
-      (Thread/sleep 200)
+      (Thread/sleep 50)
       (is (false? (async/put! output-ch {:test "should be closed"}))))))
 
 (deftest input-stream-should-kebab-case-input
