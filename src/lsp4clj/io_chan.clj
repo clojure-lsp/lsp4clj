@@ -128,6 +128,10 @@
       (with-open [writer output] ;; close output when channel closes
         (loop []
           (when-let [msg (async/<!! messages)]
-            (write-message writer msg)
+            (try
+              (write-message writer msg)
+              (catch Throwable e
+                (async/close! messages)
+                (throw e)))
             (recur)))))
     messages))
