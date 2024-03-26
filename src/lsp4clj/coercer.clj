@@ -408,6 +408,19 @@
                :ranges ::linked-editing-ranges)
          (s/conformer second)))
 
+(s/def :folding-range/kind keyword?)
+
+(s/def ::folding-range
+  (s/keys :req-un [::start-line ::end-line]
+          :opt-un [::start-character ::end-character :folding-range/kind ::collapsed-text]))
+
+(s/def ::folding-ranges (s/coll-of ::folding-range))
+
+(s/def ::folding-ranges-or-error
+  (s/and (s/or :error ::response-error
+               :ranges ::folding-ranges)
+         (s/conformer second)))
+
 (s/def :server-capabilities/signature-help-provider
   (s/conformer #(cond (vector? %) {:trigger-characters %}
                       (map? %) %
