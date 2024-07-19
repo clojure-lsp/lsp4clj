@@ -95,7 +95,7 @@
     ;; client. This cannot be `(-> (p/deferred) (p/catch))` because that returns
     ;; a promise which, when cancelled, does nothing because there's no
     ;; exception handler chained onto it. Instead, we must cancel the
-    ;; `(p/deffered)` promise itself.
+    ;; `(p/deferred)` promise itself.
     (p/catch p CancellationException
       (fn [_]
         (protocols.endpoint/send-notification server "$/cancelRequest" {:id id})))
@@ -351,9 +351,16 @@
         (if-let [{:keys [p started] :as req} (get pending-requests id)]
           (do
             (trace this trace/received-response req resp started now)
-            (if error
-              (p/reject! p (ex-info "Received error response" resp))
-              (p/resolve! p result)))
+            ;; Note that we are called from the server's pipeline, a core.async
+            ;; go-loop, and therefore must not block.  Callbacks of the pending
+            ;; request's promise will be executed in the completing thread,
+            ;; which should not be our thread.  This is very easy for users to
+            ;; miss, therefore we complete the promise on the default executor.
+            (p/thread-call :default
+                           (fn []
+                             (if error
+                               (p/reject! p (ex-info "Received error response" resp))
+                               (p/resolve! p result)))))
           (trace this trace/received-unmatched-response resp now)))
       (catch Throwable e
         (log-error-receiving this e resp))))
