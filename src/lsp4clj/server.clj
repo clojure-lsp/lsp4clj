@@ -352,9 +352,12 @@
           (do
             (trace this trace/received-response req resp started now)
             ;; Note that we are called from the server's pipeline, a core.async
-            ;; go-loop, and therefore must not block.  Callbacks of the pending
-            ;; request's promise will be executed in the completing thread,
-            ;; which should not be our thread.  This is very easy for users to
+            ;; go-loop, and therefore must not block. Callbacks of the pending
+            ;; request's promise (`p`) will be executed in the completing
+            ;; thread, whatever that thread is. Since the callbacks are not
+            ;; under our control, they are under our users' control, they could
+            ;; block. Therefore, we do not want the completing thread to be our
+            ;; thread. This is very easy for users to
             ;; miss, therefore we complete the promise on the default executor.
             (p/thread-call :default
                            (fn []
