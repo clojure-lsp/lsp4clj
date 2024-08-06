@@ -9,6 +9,7 @@
    [lsp4clj.protocols.endpoint :as protocols.endpoint]
    [lsp4clj.trace :as trace]
    [promesa.core :as p]
+   [promesa.exec :as p.exec]
    [promesa.protocols :as p.protocols])
   (:import
    (java.util.concurrent CancellationException)))
@@ -196,6 +197,7 @@
                        trace-ch
                        tracer*
                        ^java.time.Clock clock
+                       response-executor
                        on-close
                        request-id*
                        pending-sent-requests*
@@ -357,13 +359,13 @@
             ;; thread, whatever that thread is. Since the callbacks are not
             ;; under our control, they are under our users' control, they could
             ;; block. Therefore, we do not want the completing thread to be our
-            ;; thread. This is very easy for users to
-            ;; miss, therefore we complete the promise on the default executor.
-            (p/thread-call :default
-                           (fn []
-                             (if error
-                               (p/reject! p (ex-info "Received error response" resp))
-                               (p/resolve! p result)))))
+            ;; thread. This is very easy for users to miss, therefore we
+            ;; complete the promise using an explicit executor.
+            (p.exec/submit! response-executor
+                            (fn []
+                              (if error
+                                (p/reject! p (ex-info "Received error response" resp))
+                                (p/resolve! p result)))))
           (trace this trace/received-unmatched-response resp now)))
       (catch Throwable e
         (log-error-receiving this e resp))))
@@ -420,9 +422,10 @@
   (update server :tracer* reset! (trace/tracer-for-level trace-level)))
 
 (defn chan-server
-  [{:keys [output-ch input-ch log-ch trace? trace-level trace-ch clock on-close]
+  [{:keys [output-ch input-ch log-ch trace? trace-level trace-ch clock on-close response-executor]
     :or {clock (java.time.Clock/systemDefaultZone)
-         on-close (constantly nil)}}]
+         on-close (constantly nil)
+         response-executor :default}}]
   (let [;; before defaulting trace-ch, so that default is "off"
         tracer (trace/tracer-for-level (or trace-level
                                            (when (or trace? trace-ch) "verbose")
@@ -437,6 +440,7 @@
        :tracer* (atom tracer)
        :clock clock
        :on-close on-close
+       :response-executor response-executor
        :request-id* (atom 0)
        :pending-sent-requests* (atom {})
        :pending-received-requests* (atom {})
