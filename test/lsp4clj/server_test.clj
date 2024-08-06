@@ -488,14 +488,10 @@
   (testing "current thread"
     (is (not (core-async-dispatch-thread? (Thread/currentThread)))))
   (testing "thread running go blocks"
-    (let [ch (async/chan)
-          _ (async/go (async/>! ch (Thread/currentThread)))
-          thread (async/<!! ch)]
+    (let [thread (async/<!! (async/go (Thread/currentThread)))]
       (is (core-async-dispatch-thread? thread))))
   (testing "thread running core.async thread macro"
-    (let [ch (async/chan)
-          _ (async/thread (async/>!! ch (Thread/currentThread)))
-          thread (async/<!! ch)]
+    (let [thread (async/<!! (async/thread (Thread/currentThread)))]
       (is (not (core-async-dispatch-thread? thread))))))
 
 (deftest request-should-complete-on-a-suitable-executor
