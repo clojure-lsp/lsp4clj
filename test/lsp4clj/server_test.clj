@@ -9,6 +9,41 @@
    [lsp4clj.test-helper :as h]
    [promesa.core :as p]))
 
+(deftest should-pass-requests-to-handler
+  (let [input-ch (async/chan 3)
+        output-ch (async/chan 3)
+        requests* (atom [])
+        server (server/chan-server {:output-ch output-ch
+                                    :input-ch input-ch
+                                    :request-handler (fn [& args]
+                                                       (swap! requests* conj args)
+                                                       ::server/method-not-found)})]
+    (server/start server {:context :some-value})
+    (async/put! input-ch (lsp.requests/request 1 "foo" {:param 42}))
+    (h/assert-take output-ch)
+    (is (= 1 (count @requests*)))
+    (let [args (first @requests*)]
+      (is (= "foo" (first args)))
+      (is (= :some-value (:context (second args))))
+      (is (= 42 (:param (nth args 2)))))
+    (server/shutdown server)))
+
+(deftest should-pass-notifications-to-handler
+  (let [input-ch (async/chan 3)
+        output-ch (async/chan 3)
+        notification (promise)
+        server (server/chan-server {:output-ch output-ch
+                                    :input-ch input-ch
+                                    :notification-handler (fn [& args]
+                                                            (deliver notification args))})]
+    (server/start server {:context :some-value})
+    (async/put! input-ch (lsp.requests/notification "foo" {:param 42}))
+    (let [args (deref notification 100 nil)]
+      (is (= "foo" (first args)))
+      (is (= :some-value (:context (second args))))
+      (is (= 42 (:param (nth args 2)))))
+    (server/shutdown server)))
+
 (deftest should-process-messages-received-before-start
   (let [input-ch (async/chan 3)
         output-ch (async/chan 3)

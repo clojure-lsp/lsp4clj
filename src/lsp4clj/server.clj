@@ -175,13 +175,13 @@
   (-cancelled? [_]
     @cancelled?))
 
-(defn pending-received-request [method context params]
+(defn ^:private pending-received-request [handler method context params]
   (let [cancelled? (atom false)
         ;; coerce result/error to promise
         result-promise (p/promise
-                         (receive-request method
-                                          (assoc context ::req-cancelled? cancelled?)
-                                          params))]
+                         (handler method
+                                  (assoc context ::req-cancelled? cancelled?)
+                                  params))]
     (map->PendingReceivedRequest
       {:result-promise result-promise
        :cancelled? cancelled?})))
@@ -193,6 +193,8 @@
 ;; * send-notification should do nothing until initialize response is sent, with the exception of window/showMessage, window/logMessage, telemetry/event, and $/progress
 (defrecord ChanServer [input-ch
                        output-ch
+                       request-handler
+                       notification-handler
                        log-ch
                        trace-ch
                        tracer*
@@ -374,7 +376,7 @@
           resp (lsp.responses/response id)]
       (try
         (trace this trace/received-request req started)
-        (let [pending-req (pending-received-request method context params)]
+        (let [pending-req (pending-received-request request-handler method context params)]
           (swap! pending-received-requests* assoc id pending-req)
           (-> pending-req
               :result-promise
@@ -387,7 +389,7 @@
                       (lsp.responses/error resp (lsp.errors/not-found method)))
                     (lsp.responses/infer resp result))))
               ;; Handle
-              ;; 1. Exceptions thrown within p/future created by receive-request.
+              ;; 1. Exceptions thrown within promise returned by request-handler.
               ;; 2. Cancelled requests.
               (p/catch
                (fn [e]
@@ -401,7 +403,7 @@
                   (swap! pending-received-requests* dissoc id)
                   (trace this trace/sending-response req resp started (.instant clock))
                   (async/>!! output-ch resp)))))
-        (catch Throwable e ;; exceptions thrown by receive-request
+        (catch Throwable e ;; exceptions thrown by request-handler
           (log-error-receiving this e req)
           (async/>!! output-ch (internal-error-response resp req))))))
   (receive-notification [this context {:keys [method params] :as notif}]
@@ -412,7 +414,7 @@
           (if-let [pending-req (get @pending-received-requests* (:id params))]
             (p/cancel! pending-req)
             (trace this trace/received-unmatched-cancellation-notification notif now))
-          (let [result (receive-notification method context params)]
+          (let [result (notification-handler method context params)]
             (when (identical? ::method-not-found result)
               (protocols.endpoint/log this :warn "received unexpected notification" method)))))
       (catch Throwable e
@@ -422,8 +424,52 @@
   (update server :tracer* reset! (trace/tracer-for-level trace-level)))
 
 (defn chan-server
-  [{:keys [output-ch input-ch log-ch trace? trace-level trace-ch clock on-close response-executor]
-    :or {clock (java.time.Clock/systemDefaultZone)
+  "Creates a channel-based Language Server.
+
+  The returned server will be in unstarted state.  Pass it to `start` to
+  start it.
+
+  Required options:
+
+  - `output-ch` is a core.async channel that the server puts messages to the
+    client onto.
+  - `input-ch` is a core.async channel that the server takes messages from the
+    client from.
+
+  Handler functions:
+
+  - `request-handler` is a 3-arg fn `[message context params] => response`
+    to handle incoming client requests.  The response can be a response map
+    or a promise resolving to a response map.  Defaults to the `receive-request`
+    multi-method.
+  - `notification-handler` is a 3-arg fn `[message context params]` to handle
+    incoming client notifications.  Its return value is ignored.  Defaults to
+    the `receive-notification` multi-method.
+
+  Options for logging and tracing:
+
+  - `log-ch` is an optional core.async channel that the server will put log
+    messages onto.  If none is specified, a default one will be created.
+  - `trace-ch` is an optional core.async channel that the server will put
+    trace events onto.
+  - `trace-level` is a string that determines the verbosity of trace messages,
+    can be \"verbose\", \"messages\", or \"off\".
+  - `trace?` is a short-hand for `:trace-level \"verbose\"` and the default
+    when a `trace-ch` is specified.
+
+  Other options:
+
+  - `clock` is a `java.time.Clock` that provides the current time for trace
+    messages.
+  - `on-close` is a 0-arg fn that the server will call after it has shut down."
+  [{:keys [output-ch input-ch
+           request-handler notification-handler
+           log-ch
+           trace? trace-level trace-ch
+           clock on-close response-executor]
+    :or {request-handler #'receive-request
+         notification-handler #'receive-notification
+         clock (java.time.Clock/systemDefaultZone)
          on-close (constantly nil)
          response-executor :default}}]
   (let [;; before defaulting trace-ch, so that default is "off"
@@ -435,6 +481,8 @@
     (map->ChanServer
       {:output-ch output-ch
        :input-ch input-ch
+       :request-handler request-handler
+       :notification-handler notification-handler
        :log-ch log-ch
        :trace-ch trace-ch
        :tracer* (atom tracer)
