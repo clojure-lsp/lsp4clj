@@ -120,6 +120,10 @@ Alternatively, you can convert the request to a promesa promise, and handle it u
 
 In this case `(promesa/cancel! request)` will send `$/cancelRequest`.
 
+Response promises are completed on Promesa's `:default` executor.  You
+can specify your own executor by passing the `:response-executor` option
+when creating your server instance.
+
 ### Start and stop a server
 
 The last step is to start the server you created earlier. Use `lsp4clj.server/start`. This method accepts two arguments, the server and a "context".
