@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+- Add `:request-handler` and `:notification-handler` options, as a preferred
+  alternative to the `receive-request` and `receive-notification`
+  multi-methods.
 - Add a `:response-executor` option to control on which thread responses to
   server-initiated requests are run, defaulting to Promesa's `:default`
   executor, i.e. `ForkJoinPool/commonPool`.
