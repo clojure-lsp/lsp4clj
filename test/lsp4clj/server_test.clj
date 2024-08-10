@@ -481,6 +481,69 @@
              (h/assert-take output-ch)))
       (server/shutdown server))))
 
+(defn- core-async-dispatch-thread? [^Thread thread]
+  (re-matches #"async-dispatch-\d+" (.getName thread)))
+
+(deftest can-determine-core-async-dispatch-thread
+  (testing "current thread"
+    (is (not (core-async-dispatch-thread? (Thread/currentThread)))))
+  (testing "thread running go blocks"
+    (let [thread (async/<!! (async/go (Thread/currentThread)))]
+      (is (core-async-dispatch-thread? thread))))
+  (testing "thread running core.async thread macro"
+    (let [thread (async/<!! (async/thread (Thread/currentThread)))]
+      (is (not (core-async-dispatch-thread? thread))))))
+
+(deftest request-should-complete-on-a-suitable-executor
+  (testing "successful completion"
+    (let [input-ch (async/chan 3)
+          output-ch (async/chan 3)
+          server (server/chan-server {:output-ch output-ch
+                                      :input-ch input-ch})
+          _ (server/start server nil)
+          thread-p (-> (server/send-request server "req" {:body "foo"})
+                       (p/then (fn [_] (Thread/currentThread))))
+          client-rcvd-msg (h/assert-take output-ch)
+          _ (async/put! input-ch (lsp.responses/response (:id client-rcvd-msg) {:result "good"}))
+          thread (deref thread-p 100 nil)]
+      (is (not (core-async-dispatch-thread? thread)))
+      (is (instance? java.util.concurrent.ForkJoinWorkerThread thread)
+          "completes on default ForkJoinPool executor")
+      (server/shutdown server)))
+  (testing "exceptional completion"
+    (let [input-ch (async/chan 3)
+          output-ch (async/chan 3)
+          server (server/chan-server {:output-ch output-ch
+                                      :input-ch input-ch})
+          _ (server/start server nil)
+          thread-p (-> (server/send-request server "req" {:body "foo"})
+                       (p/catch (fn [_] (Thread/currentThread))))
+          client-rcvd-msg (h/assert-take output-ch)
+          _ (async/put! input-ch
+                        (-> (lsp.responses/response (:id client-rcvd-msg))
+                            (lsp.responses/error {:code 1234
+                                                  :message "Something bad"
+                                                  :data {:body "foo"}})))
+          thread (deref thread-p 100 nil)]
+      (is (not (core-async-dispatch-thread? thread)))
+      (is (instance? java.util.concurrent.ForkJoinWorkerThread thread)
+          "completes on default ForkJoinPool executor")
+      (server/shutdown server)))
+  (testing "completion with :current-thread executor for legacy behavior"
+    (let [input-ch (async/chan 3)
+          output-ch (async/chan 3)
+          server (server/chan-server {:output-ch output-ch
+                                      :input-ch input-ch
+                                      :response-executor :current-thread})
+          _ (server/start server nil)
+          thread-p (-> (server/send-request server "req" {:body "foo"})
+                       (p/then (fn [_] (Thread/currentThread))))
+          client-rcvd-msg (h/assert-take output-ch)
+          _ (async/put! input-ch (lsp.responses/response (:id client-rcvd-msg) {:result "good"}))
+          thread (deref thread-p 100 nil)]
+      (is (core-async-dispatch-thread? thread) "completes on core.async dispatch thread")
+      (server/shutdown server))))
+
 (def fixed-clock
   (-> (java.time.LocalDateTime/of 2022 03 05 13 35 23 0)
       (.toInstant java.time.ZoneOffset/UTC)
