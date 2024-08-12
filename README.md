@@ -13,7 +13,9 @@ lsp4clj reads and writes from io streams, parsing JSON-RPC according to the LSP 
 To initialize a server that will read from stdin and write to stdout:
 
 ```clojure
-(lsp4clj.io-server/stdio-server)
+(lsp4clj.io-server/stdio-server
+  {:request-handler receive-request
+   :notification-handler receive-notification})
 ```
 
 The returned server will have a core.async `:log-ch`, from which you can read server logs (vectors beginning with a log level).
@@ -27,20 +29,28 @@ The returned server will have a core.async `:log-ch`, from which you can read se
 
 ### Receive messages
 
-To receive messages from a client, lsp4clj defines a pair of multimethods, `lsp4clj.server/receive-notification` and `lsp4clj.server/receive-request` that dispatch on the method name (as defined by the LSP spec) of an incoming JSON-RPC message.
+To receive messages from a client, lsp4clj defines a pair of handlers: the `:request-handler`
+and the `:notification-handler`, which should be passed to the server constructor.
 
-Server implementors should create `defmethod`s for the messages they want to process. (Other methods will be logged and responded to with a generic "Method not found" response.)
+These handlers receive 3 arguments, the method name, a "context", and the `params` of the [JSON-RPC request or notification object](https://www.jsonrpc.org/specification#request_object). The keys of the params will have been converted (recursively) to kebab-case keywords. Read on for an explanation of what a "context" is and how to set it.
 
-These `defmethod`s receive 3 arguments, the method name, a "context", and the `params` of the [JSON-RPC request or notification object](https://www.jsonrpc.org/specification#request_object). The keys of the params will have been converted (recursively) to kebab-case keywords. Read on for an explanation of what a "context" is and how to set it.
+When a message is not understood by the server, these handlers should return the value `:lsp4clj.server/method-not-found`.  For requests, lsp4clj will then report an appropriate error message to the client.
+
+lsp4clj provides two multimethods as default handlers, `lsp4clj.server/receive-notification` and `lsp4clj.server/receive-request`, that dispatch on the method name (as defined by the LSP spec) of an incoming JSON-RPC message.  Instead of passing custom `:request-handler` and `:notification-handler` options when creating the server, implementors can create `defmethod`s for the messages they want to process. (Other methods will be logged and responded to with a generic "Method not found" response.)
+
+Note that the use of these multimethods is deprecated and they will be removed in a future release of lsp4clj.  New code should pass their own handlers instead, potentially defining their own multimethod.
 
 ```clojure
+(defmulti receive-request (fn [method _context _params] method))
+(defmulti receive-notification (fn [method _context _params] method))
+
 ;; a notification; return value is ignored
-(defmethod lsp4clj.server/receive-notification "textDocument/didOpen"
+(defmethod receive-notification "textDocument/didOpen"
   [_ context {:keys [text-document]}]
   (handler/did-open context (:uri text-document) (:text text-document))
   
 ;; a request; return value is converted to a response
-(defmethod lsp4clj.server/receive-request "textDocument/definition"
+(defmethod receive-request "textDocument/definition"
   [_ context params]
   (->> params
        (handler/definition context)
@@ -49,11 +59,29 @@ These `defmethod`s receive 3 arguments, the method name, a "context", and the `p
 
 The return value of requests will be converted to camelCase json and returned to the client. If the return value looks like `{:error ...}`, it is assumed to indicate an error response, and the `...` part will be set as the `error` of a [JSON-RPC error object](https://www.jsonrpc.org/specification#error_object). It is up to you to conform the `...` object (by giving it a `code`, `message`, and `data`.) Otherwise, the entire return value will be set as the `result` of a [JSON-RPC response object](https://www.jsonrpc.org/specification#response_object). (Message ids are handled internally by lsp4clj.)
 
+### Middleware
+
+For cross-cutting concerns of your request and notification handlers, consider middleware functions:
+
+```clojure
+(defn wrap-vthread
+  "Middleware that executes requests in a virtual thread."
+  [handler]
+  (fn [method context params]
+    (promesa.core/vthread (handler method context params))))
+
+;; ...
+
+(defmulti receive-request (fn [method _ _] method))
+
+(def server (server/chan-server {:request-handler (wrap-vthread #'receive-request)}))
+```
+
 ### Async requests
 
-lsp4clj passes the language server the client's messages one at a time. It won't provide another message until it receives a result from the multimethods. Therefore, by default, requests and notifications are processed in series.
+lsp4clj passes the language server the client's messages one at a time. It won't provide another message until it receives a result from the message handlers. Therefore, by default, requests and notifications are processed in series.
 
-However, it's possible to calculate requests in parallel (though not notifications). If the language server wants a request to be calculated in parallel with others, it should return a `java.util.concurrent.CompletableFuture`, possibly created with `promesa.core/future`, from `lsp4clj.server/receive-request`. lsp4clj will arrange for the result of this future to be returned to the client when it resolves. In the meantime, lsp4clj will continue passing the client's messages to the language server. The language server can control the number of simultaneous messages by setting the parallelism of the CompletableFutures' executor.
+However, it's possible to calculate requests in parallel (though not notifications). If the language server wants a request to be calculated in parallel with others, it should return a `java.util.concurrent.CompletableFuture`, possibly created with `promesa.core/future`, from the request handler. lsp4clj will arrange for the result of this future to be returned to the client when it resolves. In the meantime, lsp4clj will continue passing the client's messages to the language server. The language server can control the number of simultaneous messages by setting the parallelism of the CompletableFutures' executor.
 
 ### Cancelled inbound requests
 
@@ -64,7 +92,7 @@ But clients can cancel requests that are processed in parallel. In these cases l
 Nevertheless, lsp4clj gives language servers a tool to abort cancelled requests. In the request's `context`, there will be a key `:lsp4clj.server/req-cancelled?` that can be dereffed to check if the request has been cancelled. If it has, then the language server can abort whatever it is doing. If it fails to abort, there are no consequences except that it will do more work than necessary.
 
 ```clojure
-(defmethod lsp4clj.server/receive-request "textDocument/semanticTokens/full"
+(defmethod receive-request "textDocument/semanticTokens/full"
   [_ {:keys [:lsp4clj.server/req-cancelled?] :as context} params]
   (promesa.core/future
     ;; client may cancel request while we are waiting for analysis
@@ -191,7 +219,7 @@ You must not print to stdout while a `stdio-server` is running. This will corrup
 
 From experience, it's dismayingly easy to leave in an errant `prn` or `time` and end up with a non-responsive client. For this reason, we highly recommend supporting communication over sockets (see [other types of servers](#other-types-of-servers)) which are immune to this problem. However, since the choice of whether to use sockets or stdio is ultimately up to the client, you may have no choice but to support both.
 
-lsp4clj provides one tool to avoid accidental writes to stdout (or rather to `*out*`, which is usually the same as `System.out`). To protect a block of code from writing to `*out*`, wrap it with `lsp4clj.server/discarding-stdout`. The `receive-notification` and `receive-request` multimethods are already protected this way, but tasks started outside of these multimethods or that run in separate threads need this protection added.
+lsp4clj provides one tool to avoid accidental writes to stdout (or rather to `*out*`, which is usually the same as `System.out`). To protect a block of code from writing to `*out*`, wrap it with `lsp4clj.server/discarding-stdout`. The request and notification handlers are already protected this way, but tasks started outside of these handlers or that run in separate threads need this protection added.
 
 ## Known lsp4clj users
 
