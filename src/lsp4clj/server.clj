@@ -459,6 +459,9 @@
 
   Other options:
 
+  - `response-executor` is value supported by Promesa to specify an executor
+    to handle client responses to server-initiated requests.  When none is
+    specified, uses `:default`, which is mapped to `(ForkJoinPool/commonPool)`.
   - `clock` is a `java.time.Clock` that provides the current time for trace
     messages.
   - `on-close` is a 0-arg fn that the server will call after it has shut down."

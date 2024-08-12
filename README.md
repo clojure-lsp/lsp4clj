@@ -59,6 +59,24 @@ Note that the use of these multimethods is deprecated and they will be removed i
 
 The return value of requests will be converted to camelCase json and returned to the client. If the return value looks like `{:error ...}`, it is assumed to indicate an error response, and the `...` part will be set as the `error` of a [JSON-RPC error object](https://www.jsonrpc.org/specification#error_object). It is up to you to conform the `...` object (by giving it a `code`, `message`, and `data`.) Otherwise, the entire return value will be set as the `result` of a [JSON-RPC response object](https://www.jsonrpc.org/specification#response_object). (Message ids are handled internally by lsp4clj.)
 
+### Middleware
+
+For cross-cutting concerns of your request and notification handlers, consider middleware functions:
+
+```clojure
+(defn wrap-vthread
+  "Middleware that executes requests in a virtual thread."
+  [handler]
+  (fn [method context params]
+    (promesa.core/vthread (handler method context params))))
+
+;; ...
+
+(defmulti receive-request (fn [method _ _] method))
+
+(def server (server/chan-server {:request-handler (wrap-vthread #'receive-request)}))
+```
+
 ### Async requests
 
 lsp4clj passes the language server the client's messages one at a time. It won't provide another message until it receives a result from the message handlers. Therefore, by default, requests and notifications are processed in series.
