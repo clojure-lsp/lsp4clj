@@ -39,12 +39,12 @@
                       (= 0 percentage) {:kind :begin
                                         :title message
                                         :percentage 0}
-                      (= 100 percentage) {:kind :end
-                                          :message message}
+                      (= 100 percentage) (cond-> {:kind :end}
+                                           message (assoc :message message))
                       :else
                       (cond->
-                       {:kind :report
-                        :message message}
+                       {:kind :report}
+                        message (assoc :message message)
                         percentage (assoc :percentage percentage)))]
        {:token progress-token
         :value progress}))))
