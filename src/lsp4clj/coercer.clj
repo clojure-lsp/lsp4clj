@@ -109,6 +109,7 @@
 (s/def ::uri string?)
 
 (s/def ::edits (s/coll-of ::text-edit))
+(s/def ::text-edits (s/coll-of ::text-edit))
 (s/def ::edits-or-error
   (s/and (s/or :error ::response-error
                :edits ::edits)
@@ -420,6 +421,17 @@
   (s/and (s/or :error ::response-error
                :ranges ::folding-ranges)
          (s/conformer second)))
+
+(def inlay-hint-kind-enum {:type 1 :parameter 2})
+
+(s/def :inlay-hint/kind (s/and keyword?
+                               inlay-hint-kind-enum
+                               (s/conformer inlay-hint-kind-enum)))
+
+(s/def ::inlay-hint
+  (s/keys :req-un [::position ::label]
+          :opt-un [:inlay-hint/kind ::text-edits ::tooltip ::padding-left ::padding-right ::data]))
+(s/def ::inlay-hints (s/coll-of ::inlay-hint))
 
 (s/def :server-capabilities/signature-help-provider
   (s/conformer #(cond (vector? %) {:trigger-characters %}
