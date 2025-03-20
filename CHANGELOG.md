@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Add inlay-hint LSP feature coercers.
+
 ## v1.11.0
 
 - Add a `:response-executor` option to control on which thread responses to
