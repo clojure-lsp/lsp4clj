@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+## v1.12.0
+
 - Add inlay-hint LSP feature coercers.
 
 ## v1.11.0
