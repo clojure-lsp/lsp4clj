@@ -196,6 +196,7 @@ lsp4clj provides one tool to avoid accidental writes to stdout (or rather to `*o
 ## Known lsp4clj users
 
 - [clojure-lsp](https://clojure-lsp.io/): A Clojure LSP server implementation.
+- [mcp-clojure-sdk](https://github.com/unravel-team/mcp-clojure-sdk): A Clojure MCP SDK for writing MCP servers.
 
 ## Release
 
