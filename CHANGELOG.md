@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+## v1.13.0
+
 - Add textDocument/selectionRange LSP feature coercers.
 
 ## v1.12.0
