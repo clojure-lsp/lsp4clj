@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+## v1.13.1
+
 - Fix coercers
 
 ## v1.13.0
