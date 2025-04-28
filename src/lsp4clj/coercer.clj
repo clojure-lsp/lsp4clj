@@ -422,11 +422,12 @@
                :ranges ::folding-ranges)
          (s/conformer second)))
 
-(s/def :selection-range/parent ::selection-range-response)
 
 (s/def ::selection-range-response
   (s/keys :req-un [::range]
           :opt-un [:selection-range/parent]))
+
+(s/def :selection-range/parent ::selection-range-response)
 (s/def ::selection-ranges-response (s/coll-of ::selection-range-response))
 
 (def inlay-hint-kind-enum {:type 1 :parameter 2})
