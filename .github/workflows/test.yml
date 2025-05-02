@@ -1,0 +1,47 @@
+name: Run tests
+
+on:
+  push:
+    branches: [master]
+    tags:
+      - 'v[0-9]+.[0-9]+.[0-9]+*'
+  pull_request:
+    branches: [master]
+
+env:
+  # increment to clear caches
+  ACTIONS_CACHE_VERSION: 'v1'
+
+jobs:
+  test:
+    strategy:
+      matrix:
+        jdk: [21]
+
+    name: Test
+
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+      - name: Setup Java ${{ matrix.jdk }}
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: ${{ matrix.jdk }}
+      - uses: actions/cache@v4
+        with:
+          path: |
+            ~/.m2/repository
+            ~/.gitlibs
+            ~/.deps.clj
+          key: clojuredeps-${{ env.ACTION_CACHE_VERSION }}-${{ hashFiles('deps.edn', 'bb.edn') }}
+          restore-keys: |
+            clojuredeps-${{ env.ACTION_CACHE_VERSION }}-
+      - name: Setup Clojure and Babashka
+        uses: DeLaGuardo/setup-clojure@master
+        with:
+          cli: latest
+          bb: latest
+      - name: Run tests
+        run: bb test
