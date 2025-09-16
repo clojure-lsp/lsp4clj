@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+## v2.0.0
+
 - Move most logic to jsonrpc4clj library.
 
 ## v1.13.1
