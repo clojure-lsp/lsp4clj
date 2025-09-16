@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+## v2.0.1
+
 - bump jsonrpc4clj
 
 ## v2.0.0
