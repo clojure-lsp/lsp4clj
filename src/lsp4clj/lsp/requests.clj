@@ -2,24 +2,10 @@
 
 (set! *warn-on-reflection* true)
 
-(defn request [id method params]
-  {:jsonrpc "2.0"
-   :method method
-   :params params
-   :id id})
-
-(defn notification [method params]
-  {:jsonrpc "2.0"
-   :method method
-   :params params})
-
-;; TODO: The following are helpers used by servers, but not by lsp4clj itself.
-;; Perhaps they belong in a utils namespace.
-
-(defn clamp [n n-min n-max]
+(defn ^:private clamp [n n-min n-max]
   (-> n (max n-min) (min n-max)))
 
-#_{:clj-kondo/ignore [:clojure-lsp/unused-public-var]}
+#_{:clojure-lsp/ignore [:clojure-lsp/unused-public-var]}
 (defn work-done-progress
   "Returns the params for a WorkDone $/progress notification.
 

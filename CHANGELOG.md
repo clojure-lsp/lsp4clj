@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Move most logic to jsonrpc4clj library.
+
 ## v1.13.1
 
 - Fix coercers

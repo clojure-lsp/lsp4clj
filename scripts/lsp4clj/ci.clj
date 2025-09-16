@@ -8,7 +8,7 @@
     (string/replace $ regex content)
     (spit file $)))
 
-#_{:clj-kondo/ignore [:clojure-lsp/unused-public-var]}
+#_{:clojure-lsp/ignore [:clojure-lsp/unused-public-var]}
 (defn tag [& [tag]]
   (shell "git fetch origin")
   (shell "git pull origin HEAD")
